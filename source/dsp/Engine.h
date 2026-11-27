@@ -36,6 +36,10 @@ public:
     // ---- テスト用の口（SPEC §8.2）。製品の画面からは触れない。process() と同じスレッドから呼ぶこと。
     // バンド中心での目標応答 [dB] を外から固定する。nullptr で解除。
     void setTestTargetsDb (const float* targetsDb) noexcept;
+    // ノッチ 1 本を外から固定する（index < 0 で解除）。setTestTargetsDb と併用する。
+    void setTestNotch (int index, float freqHz, float gainDb) noexcept;
+    float getNotchGainDb (int n) const noexcept { return notchGainDb[size_t (n)]; }
+    float getNotchFreqHz (int n) const noexcept { return notchFreq[size_t (n)]; }
     GuardState getGuardState() const noexcept { return guard; }
     float getGuardFade() const noexcept       { return guardFade; }
     const float* getBandGainsDb() const noexcept { return gainDb.data(); }
@@ -47,6 +51,7 @@ private:
     void computeTargetCoefs() noexcept;
     void snapCoefsToTargets() noexcept;
     void updateDerivedCoefs() noexcept;
+    void computeNotchTargets() noexcept;
     void clearFilterStates() noexcept;
     void enterMuted() noexcept;
     void beginRecover() noexcept;
@@ -79,6 +84,17 @@ private:
     alignas (32) BandArray<float> da1 {}, da2 {}, da3 {}, dm1 {};
     alignas (32) BandArray<float> ta1 {}, ta2 {}, ta3 {}, tm1 {};
     int rampLeft = 0;
+
+    // 動くノッチ（SPEC §14）。係数の持ち方は帯域と同じ。
+    template <typename T> using NotchArray = std::array<T, kNumNotches>;
+    alignas (32) NotchArray<float> na1 {}, na2 {}, na3 {}, nm1 {}, nc0 {};
+    alignas (32) NotchArray<float> dna1 {}, dna2 {}, dna3 {}, dnm1 {};
+    alignas (32) NotchArray<float> tna1 {}, tna2 {}, tna3 {}, tnm1 {};
+    NotchArray<float> notchFreq {}, notchGainDb {};
+    alignas (32) float nic1[kMaxChannels][kNumNotches] {};
+    alignas (32) float nic2[kMaxChannels][kNumNotches] {};
+    int testNotchIndex = -1;
+    float testNotchFreq = 1000.0f, testNotchGainDb = 0.0f;
 
     // フィルタの状態
     alignas (32) float ic1[kMaxChannels][kNumBands] {};

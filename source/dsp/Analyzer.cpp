@@ -14,7 +14,7 @@ void Analyzer::setTuning (const Tuning& t) noexcept
     releaseStep = frameSec / tune.releaseSec;
     deepenStep  = frameSec / tune.deepenSec;
     deepenFastStep = frameSec / tune.deepenFastSec;
-    kLo = std::max (5, int (std::ceil (tune.analysisLowHz / binHz)));
+    kLo = std::max (3, int (std::ceil (tune.analysisLowHz / binHz)));
     kHi = std::min (half - 6, int (std::floor (tune.analysisHighHz / binHz)));
     combMin = std::max (3, int (std::lround (tune.combMinHz / binHz)));
     combMax = std::max (combMin, int (std::lround (tune.combMaxHz / binHz)));
@@ -52,6 +52,10 @@ void Analyzer::prepare (double sampleRate, int numChannels, int hopSize, const B
     runMax.assign (size_t (half + 1), -200.0f);
     runStart.assign (size_t (half + 1), -200.0f);
     lastL5.assign (size_t (half + 1), -200.0f);
+    peakFreq.assign (size_t (half + 1), 0.0f);
+    runFmin.assign (size_t (half + 1), 0.0f);
+    runFmax.assign (size_t (half + 1), 0.0f);
+    handled.assign (size_t (half + 1), 0);
     confirmedNow.assign (size_t (half + 1), 0);
     prominence.assign (size_t (half + 1), -100.0f);
     partials.clear();
@@ -109,6 +113,7 @@ void Analyzer::reset() noexcept
     everEngaged.fill (0);
     alertLeft = 0.0f;
     strongestHz = 0.0f;
+    notches.fill (Notch {});
 }
 
 void Analyzer::stepBand (int b, float s, bool howlNow, bool loud) noexcept
@@ -180,6 +185,117 @@ void Analyzer::stepBand (int b, float s, bool howlNow, bool loud) noexcept
                 }
             }
             break;
+    }
+}
+
+// 確認できた発振にノッチを割り当て、ノッチごとの深さ・保持・解放を進める。SPEC §14.3
+void Analyzer::stepNotches() noexcept
+{
+    std::fill (handled.begin(), handled.end(), std::uint8_t (0));
+    for (auto& n : notches)
+        n.matched = false;
+
+    auto tolerance = [&] (float f) { return std::max (tune.notchMatchMinHz, tune.notchMatchRatio * f); };
+    auto markHandled = [&] (float f)
+    {
+        const int centre = int (std::lround (f / binHz));
+        // ノッチは細いので、受け持ちは ±1 ビンだけ。それより離れた山は別の発振として扱う。
+        for (int j = std::max (kLo, centre - 1); j <= std::min (kHi, centre + 1); ++j)
+            handled[size_t (j)] = 1;
+    };
+
+    // すでにノッチがある所は、確認の有無にかかわらずノッチの受け持ちとする。
+    for (const auto& n : notches)
+        if (n.state != BandState::idle)
+            markHandled (n.freqHz);
+
+    for (int k = kLo; k <= kHi; ++k)
+    {
+        const size_t i = size_t (k);
+        if (! peak[i] || confirmedNow[i] == 0)
+            continue;
+
+        const float f = peakFreq[i], sc = smooth[i];
+        Notch* hit = nullptr;
+        for (auto& n : notches)
+            if (n.state != BandState::idle && std::abs (n.freqHz - f) <= tolerance (f))
+                hit = &n;
+
+        if (hit != nullptr)
+        {
+            if (sc >= tune.engageOff)
+                hit->matched = true;
+            continue;
+        }
+        if (sc < tune.engageOn)
+            continue;
+
+        // 空いているノッチ（いちばん長く空いているもの）を割り当てる。無ければ帯域側に任せる。
+        Notch* spare = nullptr;
+        for (auto& n : notches)
+            if (n.state == BandState::idle && (spare == nullptr || n.idleFor > spare->idleFor))
+                spare = &n;
+        if (spare == nullptr)
+            continue;
+
+        *spare = Notch {};
+        spare->freqHz  = f;
+        spare->state   = BandState::engaged;
+        spare->matched = true;
+        alertLeft = tune.alertSec;
+        markHandled (f);
+    }
+
+    for (auto& n : notches)
+    {
+        switch (n.state)
+        {
+            case BandState::idle:
+                n.idleFor += frameSec;
+                break;
+
+            case BandState::engaged:
+                if (n.matched)
+                {
+                    n.depth = std::min (1.0f, n.depth + deepenStep);
+                    n.quietFor = 0.0f;
+                }
+                else if ((n.quietFor += frameSec) >= tune.notchQuietSec)
+                {
+                    n.holdLeft = std::min (tune.holdBaseSec * float (1 << n.strikes), tune.holdMaxSec);
+                    n.state = BandState::hold;
+                }
+                break;
+
+            case BandState::hold:
+                n.holdLeft -= frameSec;
+                if (n.matched)
+                {
+                    n.state = BandState::engaged;
+                    n.quietFor = 0.0f;
+                    n.depth = std::min (1.0f, n.depth + deepenStep);
+                    alertLeft = tune.alertSec;
+                }
+                else if (n.holdLeft <= 0.0f)
+                    n.state = BandState::release;
+                break;
+
+            case BandState::release:
+                if (n.matched)
+                {
+                    n.strikes = std::uint8_t (std::min<int> (n.strikes + 1, tune.holdMaxDoublings));
+                    n.state = BandState::engaged;
+                    n.quietFor = 0.0f;
+                    n.depth = std::min (1.0f, n.depth + deepenStep);
+                    alertLeft = tune.alertSec;
+                }
+                else if ((n.depth -= releaseStep) <= 0.0f)
+                {
+                    n = Notch {};
+                    n.idleFor = 0.0f;
+                }
+                break;
+        }
     }
 }
 
@@ -298,18 +414,15 @@ void Analyzer::frame() noexcept
         const int w  = localWidth[i];
         const int lo = std::max (1, k - w), hi = std::min (half, k + w);
         const double sum = (prefix[size_t (hi + 1)] - prefix[size_t (lo)])
-                         - (prefix[size_t (k + 5)] - prefix[size_t (k - 4)]);
-        const int count = (hi - lo + 1) - 9;
+                         - (prefix[size_t (k + 5)] - prefix[size_t (std::max (lo, k - 4))]);
+        const int count = (hi - lo + 1) - (k + 5 - std::max (lo, k - 4));
         const float meanDb = 10.0f * std::log10 (float (std::max (sum, 0.0) / double (count)) + 1.0e-18f);
         prominence[i] = level[i] - meanDb;
 
-        // 倍音の候補かどうかは、すぐ隣（±3〜±8 ビン）と比べた突出度で決める
-        // （広い範囲で比べると、隣の倍音が平均を押し上げて弱い倍音を見落とすため）。
-        const int nlo = std::max (1, k - 8), nhi = std::min (half, k + 8);
-        const double nsum = (prefix[size_t (nhi + 1)] - prefix[size_t (nlo)])
-                          - (prefix[size_t (k + 3)] - prefix[size_t (k - 2)]);
-        const float narrowMeanDb = 10.0f * std::log10 (float (std::max (nsum, 0.0) / double (nhi - nlo + 1 - 5)) + 1.0e-18f);
-        if (level[i] - narrowMeanDb >= tune.partialProminenceDb)
+        // 倍音の候補かどうかは「山の形」で決める：±2 ビン離れた所より partialProminenceDb 以上高いこと。
+        // （平均との比で決めると、間隔の狭い倍音どうしが平均を押し上げ合って見落とすため。）
+        const float shoulder = std::max (level[i - 2], level[i + 2]);
+        if (level[i] - shoulder >= tune.partialProminenceDb)
             partials.push_back (k); // 容量は prepare で確保済み
     }
 
@@ -328,6 +441,13 @@ void Analyzer::frame() noexcept
             continue;
 
         peak[i] = 1;
+        {
+            // 山の頂点の位置を、両隣のレベルから放物線で細かく求める。
+            const float l = level[i - 1], c = level[i], r = level[i + 1];
+            const float denom = l - 2.0f * c + r;
+            const float offset = denom < -1.0e-6f ? std::clamp (0.5f * (l - r) / denom, -0.5f, 0.5f) : 0.0f;
+            peakFreq[i] = (float (k) + offset) * binHz;
+        }
         if (level[i] > strongest)
         {
             strongest = level[i];
@@ -346,8 +466,29 @@ void Analyzer::frame() noexcept
         if (near)
         {
             l5 = std::max ({ level[i - 2], level[i - 1], level[i], level[i + 1], level[i + 2] });
+            // 近く（±2 ビン）でいちばん強い山の周波数。
+            float f = 0.0f, best = -1.0e9f;
+            for (size_t j = i - 2; j <= i + 2; ++j)
+                if (peak[j] && level[j] > best)
+                {
+                    best = level[j];
+                    f = peakFreq[j];
+                }
             if (streak[i] == 0)
+            {
                 runMax[i] = runStart[i] = l5;
+                runFmin[i] = runFmax[i] = f;
+            }
+            runFmin[i] = std::min (runFmin[i], f);
+            runFmax[i] = std::max (runFmax[i], f);
+            if (runFmax[i] - runFmin[i] > tune.freqToleranceHz)
+            {
+                // 周波数が動いた＝声や楽器の倍音。数え直す（スコアも 0 に戻す）。
+                streak[i] = 0;
+                score[i]  = 0.0f;
+                runMax[i] = runStart[i] = l5;
+                runFmin[i] = runFmax[i] = f;
+            }
             runMax[i] = std::max (runMax[i], l5);
             if (runMax[i] - l5 > tune.drawdownDb)
                 streak[i] = 0;
@@ -379,12 +520,16 @@ void Analyzer::frame() noexcept
     if (alertLeft > 0.0f)
         alertLeft -= frameSec;
 
+    stepNotches();
+
     for (int b = 0; b < kNumBands; ++b)
     {
         float s = 0.0f;
         std::uint8_t howl = 0;
         for (int k = bandFirst[size_t (b)]; k <= bandLast[size_t (b)]; ++k)
         {
+            if (handled[size_t (k)])
+                continue; // ノッチが受け持っている所は、帯域側では扱わない
             s = std::max (s, smooth[size_t (k)]);
             howl = std::max (howl, confirmedNow[size_t (k)]);
         }

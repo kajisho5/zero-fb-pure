@@ -5,6 +5,8 @@ namespace zfp
 {
 inline constexpr int    kNumBands        = 40;       // SPEC §4.3
 inline constexpr int    kMaxChannels     = 2;
+inline constexpr int    kNumNotches      = 12;       // 動くノッチの本数  SPEC §14
+inline constexpr double kNotchQ          = 30.0;     // 幅 約 1/20 オクターブ
 inline constexpr double kBandLowHz       = 60.0;
 inline constexpr double kBandHighHz      = 15000.0;
 inline constexpr double kKappa           = 1.2;      // SPEC §4.3

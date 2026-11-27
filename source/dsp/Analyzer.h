@@ -18,7 +18,7 @@ struct Tuning
     float gateDb          = -72.0f;  // 絶対ゲート
     float prominenceDb    = 12.0f;   // 突出度
     // 倍音列の判定（声や楽器の倍音を発振と間違えないため）。警戒中は行わない。
-    float partialProminenceDb = 6.0f; // 倍音の候補とみなす山の突出度
+    float partialProminenceDb = 3.0f; // 倍音の候補とみなす山の高さ（±2 ビン離れた所との差）
     float combPartnerDb   = 15.0f;   // 候補より何 dB 下までを仲間の倍音とみなすか
     float combMinHz       = 70.0f;   // 倍音の間隔の下限
     float combMaxHz       = 1200.0f; // 倍音の間隔の上限
@@ -37,7 +37,11 @@ struct Tuning
     float deepenSec       = 0.080f;  // 発振が伸びている間、深さ 0→1 に進む時間
     float deepenFastSec   = 0.060f;  // 音量が大きいとき（deepenFastLevelDb 以上）の速い進み方
     float deepenFastLevelDb = 0.0f;   // 0 dBFS 以上＝実質的に使わない（調整の余地として残す）
-    float risingSlackDb   = 0.6f;    // 1 フレームでこれ以上下がったら「収まり始めた」とみなす
+    float risingSlackDb   = 0.6f;
+    float freqToleranceHz = 4.0f;    // 山の周波数がこの幅を超えて動いたら「同じ音ではない」とみなす
+    float notchMatchRatio = 0.0175f; // ノッチと山を同じものとみなす周波数の差（割合。約 1/40 オクターブ）
+    float notchMatchMinHz = 6.0f;    // 同上（下限）
+    float notchQuietSec   = 0.30f;   // 発振が確認できない時間がこれだけ続いたら保持に移る   // 1 フレームでこれ以上下がったら「収まり始めた」とみなす
     float alertSec        = 1.5f;
     float engageOn        = 0.50f;
     float engageOff       = 0.25f;
@@ -75,6 +79,10 @@ public:
     void frame() noexcept;
 
     const float* depths() const noexcept { return depth.data(); }
+    // ノッチ n の周波数 [Hz]（未使用なら 0）と深さ（0〜1）。
+    float notchFreqHz (int n) const noexcept { return notches[size_t (n)].freqHz; }
+    float notchDepth (int n) const noexcept  { return notches[size_t (n)].depth; }
+    BandState notchState (int n) const noexcept { return notches[size_t (n)].state; }
     const float* bandScores() const noexcept { return bandScore.data(); }
     BandState bandState (int b) const noexcept { return state[size_t (b)]; }
     bool alertActive() const noexcept { return alertLeft > 0.0f; }
@@ -83,6 +91,16 @@ public:
 
 private:
     void stepBand (int b, float s, bool howlNow, bool loud) noexcept;
+    void stepNotches() noexcept;
+
+    struct Notch
+    {
+        float freqHz = 0.0f, depth = 0.0f, holdLeft = 0.0f, quietFor = 0.0f, idleFor = 1.0e9f;
+        BandState state = BandState::idle;
+        std::uint8_t strikes = 0;
+        bool matched = false;
+    };
+    std::array<Notch, kNumNotches> notches {};
 
     Tuning tune;
     double fs = 48000.0;
@@ -99,10 +117,10 @@ private:
     int writePos = 0;
 
     std::vector<float> workRe, workIm;
-    std::vector<float> power, level, score, smooth, runMax, runStart, lastL5;
+    std::vector<float> power, level, score, smooth, runMax, runStart, lastL5, peakFreq, runFmin, runFmax;
     std::vector<double> prefix;
     std::vector<std::int32_t> streak;
-    std::vector<std::uint8_t> peak, confirmedNow;
+    std::vector<std::uint8_t> peak, confirmedNow, handled;
     std::vector<int> localWidth, partials;
     // 直近のレベルの履歴（伸び続けているかどうかを見るため）。history[f] は 1 フレーム分。
     static constexpr int kMaxHistory = 24;
