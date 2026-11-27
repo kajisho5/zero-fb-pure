@@ -101,7 +101,6 @@ if(ZFP_BUILD_PLUGIN)
     COPY_PLUGIN_AFTER_BUILD FALSE)
 
   juce_add_binary_data(ZfpAssets SOURCES
-    assets/fonts/Orbitron-Bold.ttf
     assets/fonts/SpaceMono-Regular.ttf
     assets/fonts/SpaceMono-Bold.ttf
     assets/fonts/NotoSansJP-Regular-subset.ttf)

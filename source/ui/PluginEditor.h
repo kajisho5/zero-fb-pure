@@ -1,6 +1,7 @@
-// ZERO-FB PURE — 画面。見た目の正本は docs/ui_master.svg（560 × 280）。SPEC §7。
+// ZERO-FB PURE — 画面。見た目の正本は docs/ui_master.svg（720 × 360）。SPEC §7。
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <functional>
 #include "plugin/PluginProcessor.h"
 
 namespace zfp
@@ -19,17 +20,16 @@ inline const juce::Colour meterOn    { 0xffC8C8D0 };
 inline const juce::Colour zeroLine   { 0xff3A3A46 };
 }
 
-// 同梱の書体。SVG の font-size（em の大きさ）と同じ数値で指定する。
+// 同梱の書体。SVG の font-size（em の大きさ）と同じ数値で指定する。ロゴは書体ではなく図形（LogoPaths.h）。
 struct Fonts
 {
     Fonts();
-    juce::Font logo (float size) const;
     juce::Font mono (float size, float letterSpacing = 0.0f) const;
     juce::Font monoBold (float size, float letterSpacing = 0.0f) const;
     juce::Font jp (float size) const;
 
 private:
-    juce::Typeface::Ptr orbitron, spaceMono, spaceMonoBold, notoJp;
+    juce::Typeface::Ptr spaceMono, spaceMonoBold, notoJp;
 };
 
 enum class Anchor { start, middle, end };
@@ -55,28 +55,24 @@ private:
     bool on = false, dimmed = false;
 };
 
-// ノブ。上下ドラッグで増減、Shift で微調整、ダブルクリックで既定値、ホイール対応。
-class Knob final : public juce::Component
+// 横スライダー。左右ドラッグで増減、Shift で微調整、ダブルクリックで既定値、ホイール対応。
+// 名前・値・単位の文字も自分で描く（docs/ui_master.svg の座標どおり）。
+class ParamSlider final : public juce::Component
 {
 public:
-    Knob (juce::RangedAudioParameter&, float centreX, float centreY, float arcRadius, float arcWidth,
-          float capRadius, float pointerFrom, float pointerTo, bool showDefaultTick);
+    ParamSlider (const Fonts&, juce::RangedAudioParameter&, int x, int baselineY, int width, juce::String unit);
     void paint (juce::Graphics&) override;
     void mouseDown (const juce::MouseEvent&) override;
     void mouseDrag (const juce::MouseEvent&) override;
     void mouseUp (const juce::MouseEvent&) override;
     void mouseDoubleClick (const juce::MouseEvent&) override;
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
-    bool hitTest (int x, int y) override;
-    float getValue() const { return param.convertFrom0to1 (param.getValue()); }
 
 private:
+    const Fonts& fonts;
     juce::RangedAudioParameter& param;
     juce::ParameterAttachment attachment;
-    juce::Point<float> centre;
-    float arcRadius, arcWidth, capRadius, pointerFrom, pointerTo;
-    bool showDefaultTick;
-    float dragStartNormalised = 0.0f;
+    juce::String unit;
     float accumulated = 0.0f;
     juce::Point<float> lastDrag;
 };
@@ -100,13 +96,14 @@ private:
     void paintStatus (juce::Graphics&);
     void paintMeter (juce::Graphics&, const char* name, float y, int litFrom, int litTo, juce::Colour lit,
                      const juce::String& value);
+    void paintTags (juce::Graphics&);
     bool paramOn (const char* id) const;
     void setParam (const char* id, bool on);
 
     PluginProcessor& processor;
     Fonts fonts;
     HeaderButton resetButton, muteButton, bypassButton;
-    Knob strengthKnob, floorKnob;
+    ParamSlider strengthSlider, floorSlider;
     int resetFlashFrames = 0;
 
     // 画面用に読んだ値
@@ -130,7 +127,9 @@ private:
 
     BandLayout layout;
     double layoutRate = 0.0;
-    std::array<float, 497> curveDb {}; // x = 44〜540 を 1 px 刻み
+    std::array<float, 643> curveDb {};                          // x = 44〜686 を 1 px 刻み
+    std::array<float, size_t (kSpectrumPoints)> spectrumDb {};  // 入力のスペクトル（表示用にならしたもの）
+    juce::Path logoMark, logoZeroFb, logoPure;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginEditor)
 };

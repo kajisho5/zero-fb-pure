@@ -364,6 +364,7 @@ bool Analyzer::isGrowing (int k) const noexcept
 
 void Analyzer::frame() noexcept
 {
+    ++frames;
     // 1) 窓掛け。ステレオは L を実部、R を虚部に入れて 1 回の FFT で両方のスペクトルを得る。
     const int mask = fftSize - 1;
     if (channels == 2)

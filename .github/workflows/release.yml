@@ -1,0 +1,112 @@
+# 配布用のビルドとリリース。
+# - Mac：ビルド → Developer ID 署名 → Apple の公証 → .dmg（kajisho5/runway の共通ワークフロー。Mac は不要）
+# - Windows：VST3 を zip にまとめる（署名なし）
+# - CMakeLists.txt のバージョン（project(... VERSION x.y.z)）のリリースがまだ無ければ、GitHub のリリース（プレリリース）を作る
+name: release
+
+on:
+  workflow_dispatch:      # Actions の画面（iPhone の GitHub アプリでも可）から手動で実行
+  push:
+    branches: [main]
+    paths:
+      - CMakeLists.txt                      # バージョンを上げて main に入れるとリリース
+      - .github/release-mac-request.txt     # 1 行足して main に入れると、リリースせずにビルドだけ行う
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      release: ${{ steps.v.outputs.release }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^project(zero_fb_pure VERSION \([0-9][0-9.]*\).*/\1/p' CMakeLists.txt)"
+          [ -n "$version" ] || { echo "::error::CMakeLists.txt からバージョンを読めなかった"; exit 1; }
+          if gh release view "v$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "v$version はリリース済み。ビルドだけ行う"
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "version=" >> "$GITHUB_OUTPUT"
+          else
+            echo "v$version をリリースする"
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+          fi
+
+  mac:
+    needs: plan
+    uses: kajisho5/runway/.github/workflows/mac-notarize.yml@main
+    with:
+      name: ZERO-FB-PURE
+      version: ${{ needs.plan.outputs.version }}
+      build: >-
+        cmake -B build -G Xcode
+        -DZFP_BUILD_PLUGIN=ON
+        -DZFP_BUILD_TESTS=OFF
+        -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+        -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+        && cmake --build build --config Release --parallel
+      products: |
+        build/**/Release/VST3/*.vst3
+        build/**/Release/AU/*.component
+      readme: dist/INSTALL.txt
+    secrets: inherit
+
+  windows:
+    needs: plan
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build
+        run: |
+          cmake -S . -B build -DZFP_BUILD_PLUGIN=ON -DZFP_BUILD_TESTS=OFF
+          cmake --build build --config Release --parallel
+      - name: Package
+        shell: pwsh
+        run: |
+          $v = "${{ needs.plan.outputs.version }}"
+          if (-not $v) { $v = "$env:GITHUB_SHA".Substring(0, 7) }
+          New-Item -ItemType Directory -Force out, stage | Out-Null
+          Copy-Item -Recurse "build\ZeroFbPure_artefacts\Release\VST3\ZERO-FB PURE.vst3" stage\
+          Copy-Item dist\INSTALL-WINDOWS.txt, LICENSE stage\
+          Compress-Archive -Path stage\* -DestinationPath "out\ZERO-FB-PURE-$v-windows-unsigned.zip"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ZERO-FB-PURE-windows-unsigned
+          path: out/*.zip
+          if-no-files-found: error
+
+  publish:
+    needs: [plan, mac, windows]
+    if: needs.plan.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          set -euo pipefail
+          ls -la artifacts
+          notes="dist/release-notes/v$VERSION.md"
+          [ -f "$notes" ] || { echo "::error::$notes が無い（リリースノートを先に書く）"; exit 1; }
+          shopt -s nullglob
+          files=(artifacts/*.dmg artifacts/*.zip)
+          [ "${#files[@]}" -ge 2 ] || { echo "::error::配布物がそろっていない"; exit 1; }
+          gh release create "v$VERSION" "${files[@]}" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "ZERO-FB PURE v$VERSION" --notes-file "$notes" --prerelease
