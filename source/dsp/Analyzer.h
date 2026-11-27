@@ -17,7 +17,7 @@ struct Tuning
     float analysisHighHz  = 16000.0f;
     float gateDb          = -72.0f;  // 絶対ゲート
     float prominenceDb    = 12.0f;   // 突出度
-    // 倍音列の判定（声や楽器の倍音を発振と間違えないため）。警戒中は行わない。
+    // 倍音列の判定（声や楽器の倍音を発振と間違えないため）。SPEC §5.5
     float partialProminenceDb = 3.0f; // 倍音の候補とみなす山の高さ（±2 ビン離れた所との差）
     float combPartnerDb   = 15.0f;   // 候補より何 dB 下までを仲間の倍音とみなすか
     float combMinHz       = 70.0f;   // 倍音の間隔の下限
@@ -37,12 +37,12 @@ struct Tuning
     float deepenSec       = 0.080f;  // 発振が伸びている間、深さ 0→1 に進む時間
     float deepenFastSec   = 0.060f;  // 音量が大きいとき（deepenFastLevelDb 以上）の速い進み方
     float deepenFastLevelDb = 0.0f;   // 0 dBFS 以上＝実質的に使わない（調整の余地として残す）
-    float risingSlackDb   = 0.6f;
+    float risingSlackDb   = 0.6f;    // 1 フレームでこれ以上下がったら「収まり始めた」とみなす
     float freqToleranceHz = 4.0f;    // 山の周波数がこの幅を超えて動いたら「同じ音ではない」とみなす
     float notchMatchRatio = 0.0175f; // ノッチと山を同じものとみなす周波数の差（割合。約 1/40 オクターブ）
     float notchMatchMinHz = 6.0f;    // 同上（下限）
     float settleBack      = 0.60f;   // 保持に移るとき、深さをこの割合に戻す（行きすぎた分を返す）
-    float notchQuietSec   = 0.30f;   // 発振が確認できない時間がこれだけ続いたら保持に移る   // 1 フレームでこれ以上下がったら「収まり始めた」とみなす
+    float notchQuietSec   = 0.30f;   // 発振が確認できない時間がこれだけ続いたら保持に移る
     float alertSec        = 1.5f;
     float engageOn        = 0.50f;
     float engageOff       = 0.25f;

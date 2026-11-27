@@ -60,7 +60,7 @@ private:
     // 設定
     double fs = 48000.0;
     int numIn = 1, numOut = 1;
-    int hop = 128;
+    int hop = 256;
     int fadeSamples = 240;
     float fadeStep = 1.0f / 240.0f;
     float guardRelStep = 0.0f;
