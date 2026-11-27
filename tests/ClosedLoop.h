@@ -214,13 +214,15 @@ struct Run
 };
 
 // x[n] = s[n] + G * (h * y)[n - D],  y = Plugin(x)。engine が nullptr ならプラグインなし（素通し）。
+// rampSec > 0 のときは、ゲインを (gainDb - 12 dB) から gainDb まで rampSec 秒かけて上げる
+// （フェーダーを徐々に上げる使い方を模す）。
 inline Run simulate (const std::vector<float>& h, double delayMs, double gainDb, double seconds,
-                     zfp::Engine* engine, std::uint32_t noiseSeed = 4242u)
+                     zfp::Engine* engine, std::uint32_t noiseSeed = 4242u, double rampSec = 0.0)
 {
     const int B = Convolver::kBlock;
     const auto n = (std::size_t (seconds * kFs) / std::size_t (B)) * std::size_t (B);
     const auto delay = std::size_t (std::lround (delayMs * 0.001 * kFs));
-    const float g = float (std::pow (10.0, gainDb / 20.0));
+    const float gFinal = float (std::pow (10.0, gainDb / 20.0));
     const std::vector<float> s = pinkNoise (n, noiseSeed);
 
     Run run;
@@ -231,6 +233,12 @@ inline Run simulate (const std::vector<float>& h, double delayMs, double gainDb,
 
     for (std::size_t pos = 0; pos < n; pos += std::size_t (B))
     {
+        float g = gFinal;
+        if (rampSec > 0.0)
+        {
+            const double left = std::max (0.0, 1.0 - double (pos) / (rampSec * kFs));
+            g = float (std::pow (10.0, (gainDb - 12.0 * left) / 20.0));
+        }
         for (std::size_t i = pos; i < pos + std::size_t (B); ++i)
         {
             run.x[i] = s[i] + (i >= delay ? g * c[i - delay] : 0.0f);

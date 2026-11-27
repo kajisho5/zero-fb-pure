@@ -187,7 +187,8 @@ struct LoopResult
 };
 
 // pa = false: 残響主体の会場（ROOM-A〜C）。pa = true: 実際の PA に近づけた経路（PA-1〜3）。
-std::vector<LoopResult> runLoopSet (bool pa)
+// rampSec > 0: ゲインを 12 dB 下から rampSec 秒かけて上げる（フェーダーを徐々に上げる使い方）。
+std::vector<LoopResult> runLoopSet (bool pa, double rampSec = 0.0)
 {
     {
         using namespace loop;
@@ -209,7 +210,7 @@ std::vector<LoopResult> runLoopSet (bool pa)
 
                 zfp::Engine e;
                 e.prepare (kFs, 1, 1);
-                const auto run = simulate (h, delay, lo + 6.0, 14.0, &e);
+                const auto run = simulate (h, delay, lo + 6.0, 14.0 + rampSec, &e, 4242u, rampSec);
                 const auto st = analyse (run, 10.0);
                 const auto events = trackModes (run.x);
 
@@ -232,8 +233,8 @@ std::vector<LoopResult> runLoopSet (bool pa)
                     e.process (in, outPtr, int (probe.size()));
                     r.programLossDb = rmsDb (probe, 48000, 96000) - rmsDb (probeOut, 48000, 96000);
                 }
-                std::printf ("[CL] %s D=%2.0f ms G0=%+.1f dB | +6 dB: %s / 再発 %d 回 / 収束 最長 %.0f ms / 発振の最大 %.0f dBFS / 音量低下 %.1f dB（帯域の平均下げ幅 %.1f dB）\n",
-                             r.room, r.delayMs, r.g0, r.diverged ? "発散" : "安定", r.repeats,
+                std::printf ("[CL%s] %s D=%2.0f ms G0=%+.1f dB | +6 dB: %s / 再発 %d 回 / 収束 最長 %.0f ms / 発振の最大 %.0f dBFS / 音量低下 %.1f dB（帯域の平均下げ幅 %.1f dB）\n",
+                             rampSec > 0.0 ? " 徐々に上げる" : "", r.room, r.delayMs, r.g0, r.diverged ? "発散" : "安定", r.repeats,
                              r.worstHopMs, r.worstPeakDb, r.programLossDb, r.eqLossDb);
                 out.push_back (r);
             }
@@ -251,6 +252,12 @@ const std::vector<LoopResult>& loopResults()
 const std::vector<LoopResult>& paLoopResults()
 {
     static const std::vector<LoopResult> results = runLoopSet (true);
+    return results;
+}
+
+const std::vector<LoopResult>& paRampResults()
+{
+    static const std::vector<LoopResult> results = runLoopSet (true, 5.0);
     return results;
 }
 } // namespace
@@ -298,6 +305,19 @@ TEST_CASE ("CL-5 収束後の音量低下が 3 dB 以内（未達・記録のみ
 TEST_CASE ("CL-PA 実際の PA に近づけた経路での結果（記録のみ）", "[CL-PA][!mayfail]")
 {
     for (const auto& r : paLoopResults())
+    {
+        INFO (r.room << " D=" << r.delayMs);
+        CHECK_FALSE (r.diverged);
+        CHECK (r.repeats == 0);
+        CHECK (r.worstHopMs <= 50.0);
+        CHECK (r.programLossDb <= 3.0);
+    }
+}
+
+// ---- PA に近い経路で、ゲインを 12 dB 下から 5 秒かけて上げる（フェーダーを徐々に上げる使い方。SPEC §15.3）。
+TEST_CASE ("CL-PA-R フェーダーを徐々に上げたときの結果（記録のみ）", "[CL-PA-R][!mayfail]")
+{
+    for (const auto& r : paRampResults())
     {
         INFO (r.room << " D=" << r.delayMs);
         CHECK_FALSE (r.diverged);

@@ -463,7 +463,7 @@ void Analyzer::frame() noexcept
         if (level[i] > strongest)
         {
             strongest = level[i];
-            strongestHz = float (k) * binHz;
+            strongestHz = peakFreq[i];
         }
     }
 
