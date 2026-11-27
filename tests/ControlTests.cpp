@@ -155,8 +155,7 @@ TEST_CASE ("LV-1 定常サイン波の減衰量が入力レベルによらない
     CHECK (lo >= 9.0);
 }
 
-// VT-1 は現状では合格基準に届いていない（SPEC §13）。記録はするが、全体の合否には含めない。
-TEST_CASE ("VT-1 合成スピーチを痩せさせない（未達・記録のみ）", "[VT][!mayfail]")
+TEST_CASE ("VT-1 合成スピーチを痩せさせない", "[VT]")
 {
     checkTransparency ("VT-1", measureTransparency (syntheticSpeech (20.0, 48000.0), 48000.0));
 }
@@ -184,6 +183,7 @@ struct LoopResult
     double worstHopMs;    // 2 本目以降の発振の、出現から最大までの時間
     double worstPeakDb;   // 発振の最大レベル
     double eqLossDb;      // 収束後の EQ による平均の下げ幅（40 バンドの単純平均）
+    double programLossDb; // 収束後、ループを切ってピンクノイズを通したときの音量低下（CL-5）
 };
 
 const std::vector<LoopResult>& loopResults()
@@ -212,7 +212,7 @@ const std::vector<LoopResult>& loopResults()
                 const auto st = analyse (run, 10.0);
                 const auto events = trackModes (run.x);
 
-                LoopResult r { room.name, delay, lo, st.diverged, st.tail5RmsDb, 0, 0.0, -200.0, 0.0 };
+                LoopResult r { room.name, delay, lo, st.diverged, st.tail5RmsDb, 0, 0.0, -200.0, 0.0, 0.0 };
                 for (std::size_t i = 0; i < events.size(); ++i)
                 {
                     r.repeats += events[i].repeat ? 1 : 0;
@@ -222,9 +222,18 @@ const std::vector<LoopResult>& loopResults()
                 }
                 for (int b = 0; b < zfp::kNumBands; ++b)
                     r.eqLossDb -= double (e.getBandGainsDb()[b]) / double (zfp::kNumBands);
-                std::printf ("[CL] %s D=%2.0f ms G0=%+.1f dB | +6 dB: %s 最後の5秒 %.0f dBFS / 再発 %d 回 / 収束 最長 %.0f ms / 発振の最大 %.0f dBFS / EQ の平均下げ幅 %.1f dB\n",
-                             r.room, r.delayMs, r.g0, r.diverged ? "発散" : "安定", r.tail5Db, r.repeats,
-                             r.worstHopMs, r.worstPeakDb, r.eqLossDb);
+                {
+                    // CL-5：収束後の EQ のまま（保持中）、ループを切ってピンクノイズを 2 秒通す。
+                    const auto probe = pinkNoise (96000, 777u);
+                    std::vector<float> probeOut (probe.size());
+                    const float* in[1] = { probe.data() };
+                    float* outPtr[1] = { probeOut.data() };
+                    e.process (in, outPtr, int (probe.size()));
+                    r.programLossDb = rmsDb (probe, 48000, 96000) - rmsDb (probeOut, 48000, 96000);
+                }
+                std::printf ("[CL] %s D=%2.0f ms G0=%+.1f dB | +6 dB: %s / 再発 %d 回 / 収束 最長 %.0f ms / 発振の最大 %.0f dBFS / 音量低下 %.1f dB（帯域の平均下げ幅 %.1f dB）\n",
+                             r.room, r.delayMs, r.g0, r.diverged ? "発散" : "安定", r.repeats,
+                             r.worstHopMs, r.worstPeakDb, r.programLossDb, r.eqLossDb);
                 out.push_back (r);
             }
         }
@@ -234,9 +243,7 @@ const std::vector<LoopResult>& loopResults()
 }
 } // namespace
 
-// CL-1〜CL-3 は、現状では合格基準に届いていない（SPEC §13）。
-// 結果は毎回記録するが、失敗しても全体の合否には含めない。基準は緩めていない。
-TEST_CASE ("CL-1 発振限界 +6 dB で安定している（9 条件。未達・記録のみ）", "[CL][!mayfail]")
+TEST_CASE ("CL-1 発振限界 +6 dB で安定している（9 条件）", "[CL]")
 {
     for (const auto& r : loopResults())
     {
@@ -246,6 +253,8 @@ TEST_CASE ("CL-1 発振限界 +6 dB で安定している（9 条件。未達・
     }
 }
 
+// CL-2・CL-3・CL-5 は、現状では合格基準に届いていない（SPEC §13）。
+// 結果は毎回記録するが、失敗しても全体の合否には含めない。基準は緩めていない。
 TEST_CASE ("CL-2 同じ周波数での再発が 0 回（未達・記録のみ）", "[CL][!mayfail]")
 {
     for (const auto& r : loopResults())
@@ -261,5 +270,14 @@ TEST_CASE ("CL-3 2 本目以降の発振が 50 ms 以内に収束（未達・記
     {
         INFO (r.room << " D=" << r.delayMs);
         CHECK (r.worstHopMs <= 50.0);
+    }
+}
+
+TEST_CASE ("CL-5 収束後の音量低下が 3 dB 以内（未達・記録のみ）", "[CL][!mayfail]")
+{
+    for (const auto& r : loopResults())
+    {
+        INFO (r.room << " D=" << r.delayMs);
+        CHECK (r.programLossDb <= 3.0);
     }
 }

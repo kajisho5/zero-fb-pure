@@ -399,3 +399,31 @@ TEST_CASE ("MUTE は 5 ms で無音になり、BYPASS 中は無視される", "[
     processRange (e, in, out, 20000, n, 64);
     CHECK (identical (out[0], in[0], 20000 + 300));
 }
+
+TEST_CASE ("ZL-9 ノッチ 1 本の精度（1 kHz・-12 dB）", "[ZL-9]")
+{
+    const double fs = GENERATE (44100.0, 48000.0, 96000.0);
+    auto response = [&] (double f, bool notchOn)
+    {
+        const auto settle = std::size_t (fs * 1.0), n = settle + std::size_t (fs * 0.25);
+        zfp::Engine e;
+        REQUIRE (e.prepare (fs, 1, 1));
+        const auto flat = uniformTargets (0.0f);
+        e.setTestTargetsDb (flat.data());
+        if (notchOn)
+            e.setTestNotch (3, 1000.0f, -12.0f);
+        const Buffer in { sine (n, f, fs, 0.1f) };
+        Buffer out = makeBuffer (1, n);
+        processRange (e, in, out, 0, n, 512);
+        return toneAmplitude (out[0], settle, n, f, fs);
+    };
+    auto relativeDb = [&] (double f) { return toDb (response (f, true) / response (f, false)); };
+
+    const double centre = relativeDb (1000.0);
+    const double below  = relativeDb (1000.0 / std::sqrt (2.0)); // 1/2 オクターブ下
+    const double above  = relativeDb (1000.0 * std::sqrt (2.0)); // 1/2 オクターブ上
+    INFO ("fs=" << fs << " 中心 " << centre << " dB / 下 " << below << " dB / 上 " << above << " dB");
+    CHECK (std::abs (centre + 12.0) <= 0.5);
+    CHECK (std::abs (below) <= 0.5);
+    CHECK (std::abs (above) <= 0.5);
+}

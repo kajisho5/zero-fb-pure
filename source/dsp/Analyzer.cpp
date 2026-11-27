@@ -199,8 +199,7 @@ void Analyzer::stepNotches() noexcept
     auto markHandled = [&] (float f)
     {
         const int centre = int (std::lround (f / binHz));
-        // ノッチは細いので、受け持ちは ±1 ビンだけ。それより離れた山は別の発振として扱う。
-        for (int j = std::max (kLo, centre - 1); j <= std::min (kHi, centre + 1); ++j)
+        for (int j = std::max (kLo, centre - 3); j <= std::min (kHi, centre + 3); ++j)
             handled[size_t (j)] = 1;
     };
 
@@ -209,10 +208,17 @@ void Analyzer::stepNotches() noexcept
         if (n.state != BandState::idle)
             markHandled (n.freqHz);
 
+    // ノッチのすぐ近くでも、ノッチと周波数が合わない山は別の発振。その周り（±2 ビン）は帯域側に返す。
+    auto release = [&] (int k)
+    {
+        for (int j = std::max (kLo, k - 2); j <= std::min (kHi, k + 2); ++j)
+            handled[size_t (j)] = 0;
+    };
+
     for (int k = kLo; k <= kHi; ++k)
     {
         const size_t i = size_t (k);
-        if (! peak[i] || confirmedNow[i] == 0)
+        if (! peak[i])
             continue;
 
         const float f = peakFreq[i], sc = smooth[i];
@@ -223,12 +229,15 @@ void Analyzer::stepNotches() noexcept
 
         if (hit != nullptr)
         {
-            if (sc >= tune.engageOff)
+            if (confirmedNow[i] != 0 && sc >= tune.engageOff)
                 hit->matched = true;
             continue;
         }
-        if (sc < tune.engageOn)
+        if (confirmedNow[i] == 0 || sc < tune.engageOn)
+        {
+            release (k);
             continue;
+        }
 
         // 空いているノッチ（いちばん長く空いているもの）を割り当てる。無ければ帯域側に任せる。
         Notch* spare = nullptr;
@@ -236,7 +245,10 @@ void Analyzer::stepNotches() noexcept
             if (n.state == BandState::idle && (spare == nullptr || n.idleFor > spare->idleFor))
                 spare = &n;
         if (spare == nullptr)
+        {
+            release (k);
             continue;
+        }
 
         *spare = Notch {};
         spare->freqHz  = f;
