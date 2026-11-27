@@ -70,6 +70,39 @@ void PluginProcessor::prepareToPlay (double sampleRate, int)
     lastReset = resetValue->load() >= 0.5f;
     setLatencySamples (0);
 
+    // 表示点 i が受け持つ周波数の範囲 → 解析のビンの範囲。
+    if (engineReady)
+    {
+        const auto& analyzer = engine.getAnalyzer();
+        const double binHz = double (analyzer.getBinHz());
+        const int lastBin = analyzer.getFftSize() / 2;
+        const double ratio = double (kPlotHighHz) / double (kPlotLowHz);
+        for (int i = 0; i < kSpectrumPoints; ++i)
+        {
+            const double lo = double (kPlotLowHz) * std::pow (ratio, (double (i) - 0.5) / double (kSpectrumPoints - 1));
+            const double hi = double (kPlotLowHz) * std::pow (ratio, (double (i) + 0.5) / double (kSpectrumPoints - 1));
+            const int first = std::clamp (int (std::ceil (lo / binHz)), 1, lastBin);
+            const int last  = std::clamp (int (std::floor (hi / binHz)), 1, lastBin);
+            if (first <= last)
+            {
+                spectrumFirstBin[size_t (i)] = first;
+                spectrumLastBin[size_t (i)]  = last;
+                spectrumBlend[size_t (i)]    = -1.0f;
+            }
+            else
+            {
+                // 低い周波数ではビンの間隔のほうが広い。範囲に 1 本も入らないときは、両隣のビンの間を補間する。
+                const double position = std::clamp (std::sqrt (lo * hi) / binHz, 1.0, double (lastBin - 1));
+                spectrumFirstBin[size_t (i)] = int (position);
+                spectrumLastBin[size_t (i)]  = int (position) + 1;
+                spectrumBlend[size_t (i)]    = float (position - std::floor (position));
+            }
+        }
+        lastSpectrumFrame = analyzer.frameCount();
+    }
+    for (auto& v : ui.spectrumDb)
+        v.store (-180.0f);
+
     ui.sampleRate.store (sampleRate);
     ui.numInputs.store (numIn);
     ui.numOutputs.store (numOut);
@@ -119,6 +152,25 @@ void PluginProcessor::publish (const juce::AudioBuffer<float>& buffer, int numIn
         ui.notchState[i].store (std::uint8_t (analyzer.notchState (k)), std::memory_order_relaxed);
     }
     ui.holdSec.store (analyzer.longestHoldSec(), std::memory_order_relaxed);
+
+    // 入力のスペクトルは、解析が新しいフレームを出したときだけ書き出す。
+    if (const unsigned frame = analyzer.frameCount(); frame != lastSpectrumFrame)
+    {
+        lastSpectrumFrame = frame;
+        const float* levels = analyzer.levelsDb();
+        for (int i = 0; i < kSpectrumPoints; ++i)
+        {
+            const int first = spectrumFirstBin[size_t (i)], last = spectrumLastBin[size_t (i)];
+            const float blend = spectrumBlend[size_t (i)];
+            float value = -180.0f;
+            if (blend >= 0.0f)
+                value = levels[first] + blend * (levels[last] - levels[first]);
+            else
+                for (int k = first; k <= last; ++k)
+                    value = std::max (value, levels[k]);
+            ui.spectrumDb[size_t (i)].store (value, std::memory_order_relaxed);
+        }
+    }
     ui.guard.store (std::uint8_t (engine.getGuardState()), std::memory_order_relaxed);
 }
 

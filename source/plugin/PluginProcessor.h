@@ -61,6 +61,11 @@ private:
 
     Engine engine;
     bool engineReady = false;
+    // 表示点ごとの、解析のビンの範囲（prepareToPlay で作る）。
+    std::array<int, size_t (kSpectrumPoints)> spectrumFirstBin {}, spectrumLastBin {};
+    // 範囲にビンが 1 本も入らない低い周波数では、両隣のビンの間をこの割合で補間する（0 未満なら補間しない）。
+    std::array<float, size_t (kSpectrumPoints)> spectrumBlend {};
+    unsigned lastSpectrumFrame = 0;
     bool lastReset = false;
 
     std::atomic<float>* strengthValue = nullptr;

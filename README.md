@@ -2,7 +2,7 @@
 
 Zero-latency feedback (howling) suppressor built on plain DSP. No AI inference, no training, cut-only.
 
-**Status: work in progress (v0.1.0 not released yet).** The zero-latency signal path, detection and control, the UI and the VST3 / AU builds are in place and pass pluginval (strictness 8) and auval in CI. Some closed-loop acceptance criteria are still unmet and are tracked as record-only tests (sections 13–16 of `docs/SPEC.md`). Builds are unsigned; there is no installer yet.
+**Status: pre-release (v0.1.0).** Signed and notarized macOS builds (VST3 / AU) and unsigned Windows builds (VST3) are on the [Releases](https://github.com/kajisho5/zero-fb-pure/releases) page. The plug-in passes pluginval (strictness 8) and auval in CI, but has not been checked in a DAW or at a real venue yet, and some closed-loop acceptance criteria are still unmet (sections 13–16 of `docs/SPEC.md`).
 
 ![ZERO-FB PURE](docs/screens/ui_suppressing.png)
 
@@ -30,7 +30,7 @@ ctest --test-dir build -C Release --output-on-failure
 
 ## 日本語
 
-設計のすべては [`docs/SPEC.md`](docs/SPEC.md) にあります。遅延 0 の信号経路、検出と制御、画面、VST3 / AU のビルドまで入っており、自動テストで pluginval（厳しさ 8）と auval に通っています。閉ループの合格基準の一部はまだ未達で、「記録のみ」のテストとして残しています（設計書の §13〜§16）。署名・公証とインストーラーはまだありません。
+設計のすべては [`docs/SPEC.md`](docs/SPEC.md) にあります。v0.1.0 はプレリリースで、Mac 用（署名・公証つき）と Windows 用（署名なし）を [Releases](https://github.com/kajisho5/zero-fb-pure/releases) に置いています。自動テストで pluginval（厳しさ 8）と auval に通っていますが、DAW や実際の会場ではまだ確認していません。閉ループの合格基準の一部も未達です（設計書の §13〜§16）。
 
 ## License / ライセンス
 
@@ -44,7 +44,7 @@ Third-party components / 同梱・利用している外部の部品:
 | Component | License | Where |
 |---|---|---|
 | [JUCE](https://github.com/juce-framework/JUCE) 9.0.6 | AGPLv3 | fetched at build time (plug-in) |
-| Orbitron Bold | SIL OFL 1.1 | `assets/fonts/OFL-Orbitron.txt` |
+| DM Sans (outlines used for the logo lettering) | SIL OFL 1.1 | `assets/logo/OFL-DMSans.txt` |
 | Space Mono | SIL OFL 1.1 | `assets/fonts/OFL-SpaceMono.txt` |
 | Noto Sans JP (subset) | SIL OFL 1.1 | `assets/fonts/OFL-NotoSansJP.txt` |
 | [Catch2](https://github.com/catchorg/Catch2) v3.16.1 | BSL-1.0 | fetched at build time (tests only, not distributed) |

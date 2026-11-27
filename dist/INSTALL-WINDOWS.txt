@@ -1,0 +1,28 @@
+ZERO-FB PURE — how to install (Windows)
+
+1. Quit your DAW or plug-in host.
+2. Copy the folder "ZERO-FB PURE.vst3" to:
+
+   C:\Program Files\Common Files\VST3\
+
+3. Start the host again and rescan plug-ins if it asks.
+
+This build is NOT code-signed. Windows or your host may show a warning.
+It is a pre-release build for testing.
+
+License: GNU AGPL v3.0. Source code: https://github.com/kajisho5/zero-fb-pure
+
+
+ZERO-FB PURE — 入れ方（Windows）
+
+1. DAW やプラグインを読み込むソフトを終了します。
+2. 「ZERO-FB PURE.vst3」フォルダを、次の場所にコピーします。
+
+   C:\Program Files\Common Files\VST3\
+
+3. ソフトを起動し直します。プラグインの再スキャンを求められたら実行します。
+
+このビルドには署名がありません。Windows やソフトが警告を出すことがあります。
+試用のためのリリース前のビルドです。
+
+ライセンス：GNU AGPL v3.0。ソースコード：https://github.com/kajisho5/zero-fb-pure

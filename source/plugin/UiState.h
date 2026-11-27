@@ -8,8 +8,14 @@
 
 namespace zfp
 {
+// 入力スペクトルの表示点数。画面のグラフ（50 Hz〜16 kHz の対数、横 642 px）を 2 px ごとに 1 点。
+inline constexpr int kSpectrumPoints = 322;
+inline constexpr float kPlotLowHz = 50.0f, kPlotHighHz = 16000.0f;
+
 struct UiState
 {
+    // 入力のスペクトル [dBFS]。各点は、その周波数の範囲に入るビンのうち最大のレベル。
+    std::array<std::atomic<float>, kSpectrumPoints> spectrumDb {};
     std::array<std::atomic<float>, kNumBands> bandGainDb {};
     std::array<std::atomic<float>, kNumBands> bandScore {};
     std::array<std::atomic<std::uint8_t>, kNumBands> bandState {};   // Analyzer::BandState

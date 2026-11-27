@@ -92,6 +92,10 @@ public:
     bool alertActive() const noexcept { return alertLeft > 0.0f; }
     float peakHz() const noexcept { return strongestHz; }
     int getFftSize() const noexcept { return fftSize; }
+    // 画面表示用：直近のフレームのスペクトル [dBFS]（0〜fftSize/2 の fftSize/2+1 個）、ビン幅 [Hz]、フレームの通し番号。
+    const float* levelsDb() const noexcept { return level.data(); }
+    float getBinHz() const noexcept { return binHz; }
+    unsigned frameCount() const noexcept { return frames; }
     // 保持（Hold）中のバンド・ノッチのうち、いちばん長く残っている残り時間 [秒]。無ければ 0。画面表示用。
     float longestHoldSec() const noexcept
     {
@@ -142,6 +146,7 @@ private:
     static constexpr int kMaxHistory = 24;
     std::array<std::vector<float>, kMaxHistory> history;
     int historyPos = 0;
+    unsigned frames = 0;
 
     bool isGrowing (int k) const noexcept;
     std::vector<float> prominence;
