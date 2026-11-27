@@ -186,17 +186,18 @@ struct LoopResult
     double programLossDb; // 収束後、ループを切ってピンクノイズを通したときの音量低下（CL-5）
 };
 
-const std::vector<LoopResult>& loopResults()
+// pa = false: 残響主体の会場（ROOM-A〜C）。pa = true: 実際の PA に近づけた経路（PA-1〜3）。
+std::vector<LoopResult> runLoopSet (bool pa)
 {
-    static const std::vector<LoopResult> results = []
     {
         using namespace loop;
         struct Room { const char* name; double rt60; float rho; std::uint32_t seed; };
-        const Room rooms[] = { { "ROOM-A", 0.4, 0.05f, 1001u }, { "ROOM-B", 0.9, 0.04f, 1002u }, { "ROOM-C", 1.6, 0.03f, 1003u } };
+        const Room reverbRooms[] = { { "ROOM-A", 0.4, 0.05f, 1001u }, { "ROOM-B", 0.9, 0.04f, 1002u }, { "ROOM-C", 1.6, 0.03f, 1003u } };
+        const Room paRooms[] = { { "PA-1", 0.0, 0.0f, 2001u }, { "PA-2", 0.0, 0.0f, 2002u }, { "PA-3", 0.0, 0.0f, 2003u } };
         std::vector<LoopResult> out;
-        for (const auto& room : rooms)
+        for (const auto& room : (pa ? paRooms : reverbRooms))
         {
-            const auto h = makeRoom (room.rt60, room.rho, room.seed);
+            const auto h = pa ? makePaPath (room.seed) : makeRoom (room.rt60, room.rho, room.seed);
             for (const double delay : { 5.0, 12.0, 25.0 })
             {
                 double lo = -12.0, hi = 6.0; // G0：プラグインなしで発散しない最大のゲイン
@@ -238,7 +239,18 @@ const std::vector<LoopResult>& loopResults()
             }
         }
         return out;
-    }();
+    }
+}
+
+const std::vector<LoopResult>& loopResults()
+{
+    static const std::vector<LoopResult> results = runLoopSet (false);
+    return results;
+}
+
+const std::vector<LoopResult>& paLoopResults()
+{
+    static const std::vector<LoopResult> results = runLoopSet (true);
     return results;
 }
 } // namespace
@@ -278,6 +290,19 @@ TEST_CASE ("CL-5 収束後の音量低下が 3 dB 以内（未達・記録のみ
     for (const auto& r : loopResults())
     {
         INFO (r.room << " D=" << r.delayMs);
+        CHECK (r.programLossDb <= 3.0);
+    }
+}
+
+// ---- 実際の PA に近づけた経路（PA-1〜3 × 遅延 3 種）。まず記録だけ行う（SPEC §15）。
+TEST_CASE ("CL-PA 実際の PA に近づけた経路での結果（記録のみ）", "[CL-PA][!mayfail]")
+{
+    for (const auto& r : paLoopResults())
+    {
+        INFO (r.room << " D=" << r.delayMs);
+        CHECK_FALSE (r.diverged);
+        CHECK (r.repeats == 0);
+        CHECK (r.worstHopMs <= 50.0);
         CHECK (r.programLossDb <= 3.0);
     }
 }

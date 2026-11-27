@@ -59,6 +59,61 @@ inline std::vector<float> makeRoom (double rt60, float rho, std::uint32_t seed)
     return h;
 }
 
+// 実際の PA に近づけた架空の経路：直接音が主体＋数本の反射＋弱い残響＋機材の山（共振）3 つ。
+// 残響だけの makeRoom より、発振しやすい周波数が少数の山に集まる。
+inline std::vector<float> makePaPath (std::uint32_t seed)
+{
+    const double rt60 = 0.5;
+    const auto len = std::size_t (0.35 * kFs);
+    int n = 1;
+    while (std::size_t (n) < 2 * len) n <<= 1;
+
+    std::vector<float> re (std::size_t (n), 0.0f), im (std::size_t (n), 0.0f);
+    Xorshift rng { seed };
+    re[0] = 1.0f; // 直接音
+    for (int r = 0; r < 8; ++r) // 反射 8 本：3〜40 ms、-6〜-16 dB、符号は交互
+    {
+        const auto at = std::size_t ((0.003 + 0.037 * double (rng.uniform())) * kFs);
+        const float gain = std::pow (10.0f, (-6.0f - 10.0f * rng.uniform()) / 20.0f);
+        re[at] += (r % 2 == 0 ? gain : -gain);
+    }
+    for (std::size_t i = std::size_t (0.02 * kFs); i < len; ++i) // 弱い残響
+        re[i] += 0.006f * rng.gaussian() * float (std::exp (-6.91 * double (i) / (rt60 * kFs)));
+
+    zfp::Fft fft;
+    fft.prepare (n);
+    fft.forward (re.data(), im.data());
+
+    // 機材の山（スピーカーやマイクの共振に相当）：+6〜+10 dB、Q 6 のベルを 3 つ、振幅だけ掛ける。
+    double peakHz[3], peakDb[3];
+    for (int p = 0; p < 3; ++p)
+    {
+        peakHz[p] = 200.0 * std::pow (40.0, double (rng.uniform())); // 200 Hz〜8 kHz
+        peakDb[p] = 6.0 + 4.0 * double (rng.uniform());
+    }
+    float peak = 0.0f;
+    for (int k = 0; k < n; ++k)
+    {
+        const double f = kFs * double (k <= n / 2 ? k : n - k) / double (n);
+        double gain = (f < 80.0 || f > 12000.0) ? 0.0 : 1.0;
+        for (int p = 0; p < 3 && gain > 0.0; ++p)
+        {
+            const double x = 6.0 * (f / peakHz[p] - peakHz[p] / f);
+            gain *= std::pow (10.0, peakDb[p] / 20.0 / (1.0 + x * x));
+        }
+        re[std::size_t (k)] *= float (gain);
+        im[std::size_t (k)] *= float (gain);
+        peak = std::max (peak, std::hypot (re[std::size_t (k)], im[std::size_t (k)]));
+    }
+
+    for (auto& v : im) v = -v;
+    fft.forward (re.data(), im.data());
+    std::vector<float> h (len);
+    for (std::size_t i = 0; i < len; ++i)
+        h[i] = re[i] / (float (n) * peak);
+    return h;
+}
+
 // 等分割の周波数領域畳み込み（ブロック長 128）。
 class Convolver
 {
