@@ -43,6 +43,7 @@ struct Tuning
     float notchMatchRatio = 0.0175f; // ノッチと山を同じものとみなす周波数の差（割合。約 1/40 オクターブ）
     float notchMatchMinHz = 6.0f;    // 同上（下限）
     float settleBack      = 0.60f;   // 保持に移るとき、深さをこの割合に戻す（行きすぎた分を返す）
+    float holdSpread      = 0.5f;    // ノッチの保持の長さを、番号に応じて最大この割合だけ延ばす
     float notchQuietSec   = 0.30f;   // 発振が確認できない時間がこれだけ続いたら保持に移る
     float alertSec        = 1.5f;
     float engageOn        = 0.50f;

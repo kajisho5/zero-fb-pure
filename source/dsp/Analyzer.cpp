@@ -278,7 +278,9 @@ void Analyzer::stepNotches() noexcept
                 }
                 else if ((n.quietFor += frameSec) >= tune.notchQuietSec)
                 {
-                    n.holdLeft = std::min (tune.holdBaseSec * float (1 << n.strikes), tune.holdMaxSec);
+                    // 保持の長さをノッチごとに少しずつ変える（同時に掴んだものを、いっせいに戻さないため）。
+                    const float spread = 1.0f + tune.holdSpread * float (&n - notches.data()) / float (kNumNotches);
+                    n.holdLeft = std::min (tune.holdBaseSec * float (1 << n.strikes), tune.holdMaxSec) * spread;
                     n.depth *= tune.settleBack;
                     n.state = BandState::hold;
                 }
