@@ -13,8 +13,9 @@ void Analyzer::setTuning (const Tuning& t) noexcept
     stepDown    = frameSec / tune.scoreDownSec;
     releaseStep = frameSec / tune.releaseSec;
     deepenStep  = frameSec / tune.deepenSec;
-    kLo = std::max (3, int (std::ceil (tune.analysisLowHz / binHz)));
-    kHi = std::min (half - 4, int (std::floor (tune.analysisHighHz / binHz)));
+    deepenFastStep = frameSec / tune.deepenFastSec;
+    kLo = std::max (5, int (std::ceil (tune.analysisLowHz / binHz)));
+    kHi = std::min (half - 6, int (std::floor (tune.analysisHighHz / binHz)));
     combMin = std::max (3, int (std::lround (tune.combMinHz / binHz)));
     combMax = std::max (combMin, int (std::lround (tune.combMaxHz / binHz)));
     preCoef = float (1.0 - std::exp (-2.0 * std::numbers::pi * double (tune.preHighpassHz) / fs));
@@ -50,16 +51,20 @@ void Analyzer::prepare (double sampleRate, int numChannels, int hopSize, const B
     smooth.assign (size_t (half + 1), 0.0f);
     runMax.assign (size_t (half + 1), -200.0f);
     runStart.assign (size_t (half + 1), -200.0f);
+    lastL5.assign (size_t (half + 1), -200.0f);
     confirmedNow.assign (size_t (half + 1), 0);
     prominence.assign (size_t (half + 1), -100.0f);
     partials.clear();
     partials.reserve (size_t (half + 1));
+    for (auto& h : history)
+        h.assign (size_t (half + 1), -200.0f);
+    historyPos = 0;
     prefix.assign (size_t (half + 2), 0.0);
     streak.assign (size_t (half + 1), 0);
     peak.assign (size_t (half + 1), 0);
     localWidth.assign (size_t (half + 1), 8);
     for (int k = 0; k <= half; ++k)
-        localWidth[size_t (k)] = std::clamp (int (std::lround (0.26 * double (k))), 8, 48);
+        localWidth[size_t (k)] = std::clamp (int (std::lround (0.26 * double (k))), 16, 48);
 
     setTuning (tune);
 
@@ -83,6 +88,9 @@ void Analyzer::prepare (double sampleRate, int numChannels, int hopSize, const B
 
 void Analyzer::reset() noexcept
 {
+    for (auto& h : history)
+        std::fill (h.begin(), h.end(), -200.0f);
+    historyPos = 0;
     for (auto& r : ring)
         std::fill (r.begin(), r.end(), 0.0f);
     pre = { 0.0f, 0.0f };
@@ -91,6 +99,7 @@ void Analyzer::reset() noexcept
     std::fill (smooth.begin(), smooth.end(), 0.0f);
     std::fill (streak.begin(), streak.end(), 0);
     std::fill (runMax.begin(), runMax.end(), -200.0f);
+    std::fill (lastL5.begin(), lastL5.end(), -200.0f);
     bandScore.fill (0.0f);
     depth.fill (0.0f);
     holdLeft.fill (0.0f);
@@ -102,7 +111,7 @@ void Analyzer::reset() noexcept
     strongestHz = 0.0f;
 }
 
-void Analyzer::stepBand (int b, float s, bool howlNow) noexcept
+void Analyzer::stepBand (int b, float s, bool howlNow, bool loud) noexcept
 {
     const size_t i = size_t (b);
     auto engage = [&]
@@ -114,7 +123,7 @@ void Analyzer::stepBand (int b, float s, bool howlNow) noexcept
     auto deepen = [&]
     {
         if (howlNow)
-            depth[i] = std::min (1.0f, depth[i] + deepenStep);
+            depth[i] = std::min (1.0f, depth[i] + (loud ? deepenFastStep : deepenStep));
     };
 
     switch (state[i])
@@ -198,6 +207,26 @@ bool Analyzer::inHarmonicSeries (int k, float levelDb) const noexcept
     return false;
 }
 
+// ビン k の山が伸び続けているかどうか（Tuning の growth* の説明を参照）。
+bool Analyzer::isGrowing (int k) const noexcept
+{
+    const int frames = std::clamp (tune.growthFrames, 1, (kMaxHistory - 1) / 2);
+    const size_t i = size_t (k);
+    const int newest = (historyPos + kMaxHistory - 1) % kMaxHistory;
+    auto at = [&] (int framesAgo) { return history[size_t ((newest + kMaxHistory - framesAgo) % kMaxHistory)][i]; };
+
+    const float now = at (0), mid = at (frames), old = at (2 * frames);
+    const float rise1 = now - mid, rise2 = mid - old;
+    if (rise1 < tune.growthMinDb || rise1 > tune.growthMaxDb || rise2 < tune.growthMinDb || rise2 > tune.growthMaxDb)
+        return false;
+    if (rise1 < tune.growthSteadiness * rise2)
+        return false; // 失速している（声や楽器の立ち上がりの形）
+    for (int f = 1; f < 2 * frames; ++f)
+        if (at (f) > now + 0.5f)
+            return false; // 途中に今より高いときがあった
+    return true;
+}
+
 void Analyzer::frame() noexcept
 {
     // 1) 窓掛け。ステレオは L を実部、R を虚部に入れて 1 回の FFT で両方のスペクトルを得る。
@@ -246,6 +275,13 @@ void Analyzer::frame() noexcept
     for (int k = kLo - 2; k <= kHi + 2; ++k)
         level[size_t (k)] = 10.0f * std::log10 (power[size_t (k)] + 1.0e-18f);
 
+    {
+        auto& h = history[size_t (historyPos)];
+        for (int k = kLo - 1; k <= kHi + 1; ++k)
+            h[size_t (k)] = std::max ({ level[size_t (k - 1)], level[size_t (k)], level[size_t (k + 1)] });
+        historyPos = (historyPos + 1) % kMaxHistory;
+    }
+
     // 3) ピークの判定。まず全ての山の突出度を求め、倍音の候補（partials）を集める。
     const bool alert = alertLeft > 0.0f;
     std::fill (peak.begin(), peak.end(), std::uint8_t (0));
@@ -258,15 +294,22 @@ void Analyzer::frame() noexcept
         if (level[i] < tune.gateDb || power[i] < power[i - 1] || power[i] < power[i + 1])
             continue;
 
-        // 局所平均（自分の周り ±2 ビンを除く）。
+        // 局所平均（自分の周り ±4 ビンを除く。急に伸びる発振は裾が広がるので、広めに除く）。
         const int w  = localWidth[i];
         const int lo = std::max (1, k - w), hi = std::min (half, k + w);
         const double sum = (prefix[size_t (hi + 1)] - prefix[size_t (lo)])
-                         - (prefix[size_t (k + 3)] - prefix[size_t (k - 2)]);
-        const int count = (hi - lo + 1) - 5;
+                         - (prefix[size_t (k + 5)] - prefix[size_t (k - 4)]);
+        const int count = (hi - lo + 1) - 9;
         const float meanDb = 10.0f * std::log10 (float (std::max (sum, 0.0) / double (count)) + 1.0e-18f);
         prominence[i] = level[i] - meanDb;
-        if (prominence[i] >= tune.partialProminenceDb)
+
+        // 倍音の候補かどうかは、すぐ隣（±3〜±8 ビン）と比べた突出度で決める
+        // （広い範囲で比べると、隣の倍音が平均を押し上げて弱い倍音を見落とすため）。
+        const int nlo = std::max (1, k - 8), nhi = std::min (half, k + 8);
+        const double nsum = (prefix[size_t (nhi + 1)] - prefix[size_t (nlo)])
+                          - (prefix[size_t (k + 3)] - prefix[size_t (k - 2)]);
+        const float narrowMeanDb = 10.0f * std::log10 (float (std::max (nsum, 0.0) / double (nhi - nlo + 1 - 5)) + 1.0e-18f);
+        if (level[i] - narrowMeanDb >= tune.partialProminenceDb)
             partials.push_back (k); // 容量は prepare で確保済み
     }
 
@@ -279,7 +322,9 @@ void Analyzer::frame() noexcept
 
         const bool emergency = level[i] >= tune.emergencyLevelDb
                             && prominence[i] >= tune.emergencyProminenceDb;
-        if (! emergency && ! alert && inHarmonicSeries (k, level[i]))
+        // 等間隔に並ぶ山は声や楽器の倍音かもしれないので見送る。ただし、伸び続けている山は
+        // 発振として扱う（遅延が支配的なループでは、発振の候補そのものが等間隔に並ぶため）。
+        if (! emergency && inHarmonicSeries (k, level[i]) && ! isGrowing (k))
             continue;
 
         peak[i] = 1;
@@ -296,10 +341,11 @@ void Analyzer::frame() noexcept
     {
         const size_t i = size_t (k);
         const bool near = peak[i - 2] | peak[i - 1] | peak[i] | peak[i + 1] | peak[i + 2];
-        bool confirmed = false, growing = false;
+        bool confirmed = false, rising = false;
+        float l5 = -200.0f;
         if (near)
         {
-            const float l5 = std::max ({ level[i - 2], level[i - 1], level[i], level[i + 1], level[i + 2] });
+            l5 = std::max ({ level[i - 2], level[i - 1], level[i], level[i + 1], level[i + 2] });
             if (streak[i] == 0)
                 runMax[i] = runStart[i] = l5;
             runMax[i] = std::max (runMax[i], l5);
@@ -309,15 +355,17 @@ void Analyzer::frame() noexcept
             {
                 ++streak[i];
                 confirmed = true;
-                growing = l5 - runStart[i] >= tune.growthFastDb;
+                rising  = l5 >= lastL5[i] - tune.risingSlackDb;
             }
         }
         else
         {
             streak[i] = 0;
         }
-        confirmedNow[i] = confirmed ? 1 : 0;
-        score[i] = std::clamp (score[i] + (confirmed ? (growing ? stepUpAlert : up) : -stepDown), 0.0f, 1.0f);
+        // 1: 確認でき、まだ収まり始めていない  2: さらに音量が大きい
+        confirmedNow[i] = std::uint8_t ((confirmed && rising) ? (l5 >= tune.deepenFastLevelDb ? 2 : 1) : 0);
+        lastL5[i] = l5;
+        score[i] = std::clamp (score[i] + (confirmed ? up : -stepDown), 0.0f, 1.0f);
     }
 
     // 5) 空間の平滑化（三角 5 点。広げた後なので中心は 1.0 まで届く）とバンドへの割り当て。
@@ -334,14 +382,14 @@ void Analyzer::frame() noexcept
     for (int b = 0; b < kNumBands; ++b)
     {
         float s = 0.0f;
-        bool howlNow = false;
+        std::uint8_t howl = 0;
         for (int k = bandFirst[size_t (b)]; k <= bandLast[size_t (b)]; ++k)
         {
             s = std::max (s, smooth[size_t (k)]);
-            howlNow = howlNow || confirmedNow[size_t (k)] != 0;
+            howl = std::max (howl, confirmedNow[size_t (k)]);
         }
         bandScore[size_t (b)] = s;
-        stepBand (b, s, howlNow);
+        stepBand (b, s, howl != 0, howl == 2);
     }
 }
 } // namespace zfp

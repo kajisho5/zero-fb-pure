@@ -2,7 +2,7 @@
 
 Zero-latency feedback (howling) suppressor built on plain DSP. No AI inference, no training, cut-only.
 
-**Status: work in progress (v0.1.0 not released yet).** Step 1 of 3 is done: the zero-latency signal path and its automated tests. Detection (Step 2) and the plug-in UI / VST3 / AU builds (Step 3) are not implemented yet.
+**Status: work in progress (v0.1.0 not released yet).** Step 1 of 3 is done: the zero-latency signal path and its automated tests. Step 2 (detection and control) is a prototype that does **not** meet its acceptance criteria yet; see section 13 of `docs/SPEC.md`. The plug-in UI and VST3 / AU builds (Step 3) are not implemented.
 
 ![UI master](docs/ui_master_preview.png)
 
@@ -13,7 +13,7 @@ Zero-latency feedback (howling) suppressor built on plain DSP. No AI inference, 
 | `docs/SPEC.md` | The single source of truth: formulas, constants, state machine, test criteria (Japanese) |
 | `docs/ui_master.svg` | UI design master, 560 x 280 |
 | `source/dsp/` | Signal path: DC blocker, 40-band serial SVF EQ, band decoupling, safety guard, soft limiter. No JUCE dependency |
-| `tests/` | `ZeroLatencyTest` ZL-1 to ZL-8 |
+| `tests/` | `ZeroLatencyTest` ZL-1 to ZL-8, level / voice tests, closed-loop bench |
 | `bench/` | PF-1 load measurement |
 
 ## Build and test
@@ -28,4 +28,4 @@ ctest --test-dir build -C Release --output-on-failure
 
 ## 日本語
 
-設計のすべては [`docs/SPEC.md`](docs/SPEC.md) にあります。現在は 3 段階のうち Step 1（遅延 0 の信号経路と自動テスト）まで完了しています。
+設計のすべては [`docs/SPEC.md`](docs/SPEC.md) にあります。Step 1（遅延 0 の信号経路と自動テスト）は完了。Step 2（検出と制御）は試作中で、合格基準にまだ届いていません（設計書の §13）。

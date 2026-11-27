@@ -8,6 +8,8 @@ using namespace zfptest::loop;
 int main (int argc, char** argv)
 {
     const double seconds = argc > 1 ? std::atof (argv[1]) : 14.0;
+    const auto noiseSeed = std::uint32_t (argc > 2 ? std::atoi (argv[2]) : 4242);
+    const bool only6 = argc > 3;
     struct Room { const char* name; double rt60; float rho; std::uint32_t seed; };
     const Room rooms[] = { { "ROOM-A", 0.4, 0.05f, 1001u }, { "ROOM-B", 0.9, 0.04f, 1002u }, { "ROOM-C", 1.6, 0.03f, 1003u } };
 
@@ -29,9 +31,22 @@ int main (int argc, char** argv)
             std::printf ("%s D=%2.0fms G0=%+.1f |", room.name, delay, g0);
             for (const double over : { 3.0, 6.0, 9.0, 12.0 })
             {
+                if (only6 && over != 6.0)
+                    continue;
                 zfp::Engine e;
                 e.prepare (kFs, 1, 1);
-                const auto run = simulate (h, delay, g0 + over, seconds, &e);
+                {
+                    // 調整用：環境変数で定数を上書きできる。
+                    zfp::Tuning t;
+                    auto env = [] (const char* name, float& v) { if (const char* s = std::getenv (name)) v = float (std::atof (s)); };
+                    env ("ZFP_DEEPEN", t.deepenSec);       env ("ZFP_DEEPEN_FAST", t.deepenFastSec);
+                    env ("ZFP_PROM", t.prominenceDb);      env ("ZFP_SLACK", t.risingSlackDb);
+                    env ("ZFP_UP", t.scoreUpSec);          env ("ZFP_DRAWDOWN", t.drawdownDb);
+                    env ("ZFP_FASTLEVEL", t.deepenFastLevelDb);
+                    env ("ZFP_EMERG", t.emergencyLevelDb);  env ("ZFP_COMBDB", t.combPartnerDb);
+                    e.setTuning (t);
+                }
+                const auto run = simulate (h, delay, g0 + over, seconds, &e, noiseSeed);
                 const auto st = analyse (run, 10.0);
                 const auto ev = trackModes (run.x);
                 int repeats = 0;

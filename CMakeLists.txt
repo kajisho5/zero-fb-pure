@@ -44,6 +44,7 @@ if(ZFP_BUILD_TESTS)
 
   add_executable(zfp_tests
     tests/AllocCounter.cpp
+    tests/ControlTests.cpp
     tests/LayoutAndDecouplerTests.cpp
     tests/ZeroLatencyTests.cpp)
   target_link_libraries(zfp_tests PRIVATE zfp_dsp Catch2::Catch2WithMain)

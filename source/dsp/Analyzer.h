@@ -28,8 +28,16 @@ struct Tuning
     float scoreUpSec      = 0.080f;  // スコア 0→1（通常）
     float scoreUpAlertSec = 0.016f;  // スコア 0→1（警戒中）
     float scoreDownSec    = 0.400f;  // スコア 1→0
-    float growthFastDb    = 10.0f;   // これだけ伸び続けた山は、警戒中と同じ速さで数える
-    float deepenSec       = 0.060f;  // 発振が続く間、深さ 0→1 に進む時間
+    // 「伸び続けている」＝ growthFrames フレームの区間を 2 つ続けて見て、どちらも growthMinDb〜growthMaxDb だけ上がっている。
+    // 声の立ち上がり（一気に上がって止まる）と、発振（同じ調子で上がり続ける）を分けるための条件。
+    float growthMinDb     = 3.0f;
+    float growthMaxDb     = 30.0f;
+    float growthSteadiness = 0.6f;   // 新しい区間の伸びが、古い区間の伸びのこの割合以上（失速していない）
+    int   growthFrames    = 8;       // 1 区間の長さ（48 kHz で約 43 ms）
+    float deepenSec       = 0.080f;  // 発振が伸びている間、深さ 0→1 に進む時間
+    float deepenFastSec   = 0.060f;  // 音量が大きいとき（deepenFastLevelDb 以上）の速い進み方
+    float deepenFastLevelDb = 0.0f;   // 0 dBFS 以上＝実質的に使わない（調整の余地として残す）
+    float risingSlackDb   = 0.6f;    // 1 フレームでこれ以上下がったら「収まり始めた」とみなす
     float alertSec        = 1.5f;
     float engageOn        = 0.50f;
     float engageOff       = 0.25f;
@@ -74,14 +82,14 @@ public:
     int getFftSize() const noexcept { return fftSize; }
 
 private:
-    void stepBand (int b, float s, bool howlNow) noexcept;
+    void stepBand (int b, float s, bool howlNow, bool loud) noexcept;
 
     Tuning tune;
     double fs = 48000.0;
     int channels = 1, hop = 256, fftSize = 2048, half = 1024;
     float frameSec = 0.0f, binHz = 0.0f, norm2 = 1.0f;
     int kLo = 1, kHi = 1, combMin = 3, combMax = 51;
-    float stepUp = 0, stepUpAlert = 0, stepDown = 0, releaseStep = 0, deepenStep = 0;
+    float stepUp = 0, stepUpAlert = 0, stepDown = 0, releaseStep = 0, deepenStep = 0, deepenFastStep = 0;
 
     Fft fft;
     std::vector<float> window;
@@ -91,11 +99,17 @@ private:
     int writePos = 0;
 
     std::vector<float> workRe, workIm;
-    std::vector<float> power, level, score, smooth, runMax, runStart;
+    std::vector<float> power, level, score, smooth, runMax, runStart, lastL5;
     std::vector<double> prefix;
     std::vector<std::int32_t> streak;
     std::vector<std::uint8_t> peak, confirmedNow;
     std::vector<int> localWidth, partials;
+    // 直近のレベルの履歴（伸び続けているかどうかを見るため）。history[f] は 1 フレーム分。
+    static constexpr int kMaxHistory = 24;
+    std::array<std::vector<float>, kMaxHistory> history;
+    int historyPos = 0;
+
+    bool isGrowing (int k) const noexcept;
     std::vector<float> prominence;
 
     bool inHarmonicSeries (int k, float levelDb) const noexcept;
