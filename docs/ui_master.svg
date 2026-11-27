@@ -169,7 +169,7 @@
 <text class="m" x="178" y="230" font-size="9" fill="#E8E8EC" text-anchor="end">-14.1</text></g>
 <g id="knob-strength"><path d="M256.67 219.33 A33 33 0 1 1 303.33 219.33" fill="none" stroke="#26262E" stroke-width="5"/>
 <path d="M256.67 219.33 A33 33 0 1 1 310.49 183.37" fill="none" stroke="#18E0D0" stroke-width="5"/>
-<path d="M306.52 169.48 L310.05 165.95" stroke="#7C7C88" stroke-width="1.5"/>
+<path d="M314.65 181.65 L319.26 179.74" stroke="#7C7C88" stroke-width="1.5"/>
 <circle cx="280" cy="196" r="26.5" fill="#16161B" stroke="#26262E"/>
 <path d="M289.30 192.15 L301.71 187.01" stroke="#E8E8EC" stroke-width="2"/>
 <text x="280" y="244" font-size="9" text-anchor="middle"><tspan class="mb" fill="#7C7C88" letter-spacing="0.8">STRENGTH</tspan><tspan class="mb" dx="6" fill="#E8E8EC">75.0%</tspan></text></g>
@@ -178,7 +178,7 @@
 <circle cx="421" cy="198" r="15.0" fill="#16161B" stroke="#26262E"/>
 <path d="M418.41 192.92 L415.55 187.31" stroke="#E8E8EC" stroke-width="2"/>
 <text x="421" y="244" font-size="9" text-anchor="middle"><tspan class="mb" fill="#7C7C88" letter-spacing="0.8">FLOOR</tspan><tspan class="mb" dx="6" fill="#E8E8EC">-24.0dB</tspan></text></g>
-<g id="stat-bands"><text class="mb" x="472" y="184" font-size="9" fill="#7C7C88">BANDS</text><text class="m" x="536" y="184" font-size="9" fill="#E8E8EC" text-anchor="end">5/40</text><rect x="472" y="191" width="64" height="1" fill="#26262E"/></g>
+<g id="stat-bands"><text class="mb" x="472" y="184" font-size="9" fill="#7C7C88">BANDS</text><text class="m" x="536" y="184" font-size="9" fill="#E8E8EC" text-anchor="end">5/52</text><rect x="472" y="191" width="64" height="1" fill="#26262E"/></g>
 <g id="stat-peak"><text class="mb" x="472" y="207" font-size="9" fill="#7C7C88">PEAK</text><text class="m" x="536" y="207" font-size="9" fill="#FF5A36" text-anchor="end">2.51k</text><rect x="472" y="214" width="64" height="1" fill="#26262E"/></g>
 <g id="stat-hold"><text class="mb" x="472" y="230" font-size="9" fill="#7C7C88">HOLD</text><text class="m" x="536" y="230" font-size="9" fill="#E8E8EC" text-anchor="end">15s</text><rect x="472" y="237" width="64" height="1" fill="#26262E"/></g>
 </g>

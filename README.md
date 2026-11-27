@@ -2,7 +2,9 @@
 
 Zero-latency feedback (howling) suppressor built on plain DSP. No AI inference, no training, cut-only.
 
-**Status: work in progress (v0.1.0 not released yet).** Step 1 of 3 is done: the zero-latency signal path and its automated tests. Step 2 (detection and control) is a prototype that does **not** meet its acceptance criteria yet; see section 13 of `docs/SPEC.md`. The plug-in UI and VST3 / AU builds (Step 3) are not implemented.
+**Status: work in progress (v0.1.0 not released yet).** The zero-latency signal path, detection and control, the UI and the VST3 / AU builds are in place and pass pluginval (strictness 8) and auval in CI. Some closed-loop acceptance criteria are still unmet and are tracked as record-only tests (sections 13–16 of `docs/SPEC.md`). Builds are unsigned; there is no installer yet.
+
+![ZERO-FB PURE](docs/screens/ui_suppressing.png)
 
 ![UI master](docs/ui_master_preview.png)
 
@@ -28,4 +30,4 @@ ctest --test-dir build -C Release --output-on-failure
 
 ## 日本語
 
-設計のすべては [`docs/SPEC.md`](docs/SPEC.md) にあります。Step 1（遅延 0 の信号経路と自動テスト）は完了。Step 2（検出と制御）は試作中で、合格基準にまだ届いていません（設計書の §13）。
+設計のすべては [`docs/SPEC.md`](docs/SPEC.md) にあります。遅延 0 の信号経路、検出と制御、画面、VST3 / AU のビルドまで入っており、自動テストで pluginval（厳しさ 8）と auval に通っています。閉ループの合格基準の一部はまだ未達で、「記録のみ」のテストとして残しています（設計書の §13〜§16）。署名・公証とインストーラーはまだありません。
