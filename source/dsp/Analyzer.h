@@ -41,6 +41,7 @@ struct Tuning
     float freqToleranceHz = 4.0f;    // 山の周波数がこの幅を超えて動いたら「同じ音ではない」とみなす
     float notchMatchRatio = 0.0175f; // ノッチと山を同じものとみなす周波数の差（割合。約 1/40 オクターブ）
     float notchMatchMinHz = 6.0f;    // 同上（下限）
+    float settleBack      = 0.60f;   // 保持に移るとき、深さをこの割合に戻す（行きすぎた分を返す）
     float notchQuietSec   = 0.30f;   // 発振が確認できない時間がこれだけ続いたら保持に移る   // 1 フレームでこれ以上下がったら「収まり始めた」とみなす
     float alertSec        = 1.5f;
     float engageOn        = 0.50f;

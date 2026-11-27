@@ -153,6 +153,7 @@ void Analyzer::stepBand (int b, float s, bool howlNow, bool loud) noexcept
             if (s < tune.engageOff)
             {
                 holdLeft[i] = std::min (tune.holdBaseSec * float (1 << strikes[i]), tune.holdMaxSec);
+                depth[i] *= tune.settleBack;
                 state[i] = BandState::hold;
             }
             break;
@@ -275,6 +276,7 @@ void Analyzer::stepNotches() noexcept
                 else if ((n.quietFor += frameSec) >= tune.notchQuietSec)
                 {
                     n.holdLeft = std::min (tune.holdBaseSec * float (1 << n.strikes), tune.holdMaxSec);
+                    n.depth *= tune.settleBack;
                     n.state = BandState::hold;
                 }
                 break;

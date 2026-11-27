@@ -315,7 +315,7 @@ TEST_CASE ("CL-PA 実際の PA に近づけた経路での結果（記録のみ�
 }
 
 // ---- PA に近い経路で、ゲインを 12 dB 下から 5 秒かけて上げる（フェーダーを徐々に上げる使い方。SPEC §15.3）。
-TEST_CASE ("CL-PA-R フェーダーを徐々に上げたときの結果（記録のみ）", "[CL-PA-R][!mayfail]")
+TEST_CASE ("CL-PA-R フェーダーを徐々に上げたとき、安定・再発 0・50 ms 以内・音量低下 3 dB 以内", "[CL-PA-R]")
 {
     for (const auto& r : paRampResults())
     {
