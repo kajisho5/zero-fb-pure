@@ -260,6 +260,71 @@ const std::vector<LoopResult>& paRampResults()
     static const std::vector<LoopResult> results = runLoopSet (true, 5.0);
     return results;
 }
+
+// CL-4：発振限界 +6 dB のまま 120 秒。保持（Hold）が切れて戻し始めた後の再発を数える。
+struct LongResult
+{
+    const char* room;
+    double delayMs;
+    bool diverged, converged;
+    int hunting;
+    double worstOverDb;
+};
+
+std::vector<LongResult> runLongSet (bool pa, double rampSec)
+{
+    using namespace loop;
+    struct Room { const char* name; double rt60; float rho; std::uint32_t seed; };
+    const Room reverbRooms[] = { { "ROOM-A", 0.4, 0.05f, 1001u }, { "ROOM-B", 0.9, 0.04f, 1002u }, { "ROOM-C", 1.6, 0.03f, 1003u } };
+    const Room paRooms[] = { { "PA-1", 0.0, 0.0f, 2001u }, { "PA-2", 0.0, 0.0f, 2002u }, { "PA-3", 0.0, 0.0f, 2003u } };
+    const auto& base = pa ? paRampResults() : loopResults();
+    std::vector<LongResult> out;
+    std::size_t index = 0;
+    for (const auto& room : (pa ? paRooms : reverbRooms))
+    {
+        const auto h = pa ? makePaPath (room.seed) : makeRoom (room.rt60, room.rho, room.seed);
+        for (const double delay : { 5.0, 12.0, 25.0 })
+        {
+            const double g0 = base[index++].g0;
+            zfp::Engine e;
+            e.prepare (kFs, 1, 1);
+            const auto run = simulate (h, delay, g0 + 6.0, 120.0 + rampSec, &e, 4242u, rampSec);
+            const auto st = analyse (run, 120.0, rampSec); // 上げ終わってからの 120 秒を見る
+            LongResult r { room.name, delay, st.diverged, st.convergedAt.has_value(), st.huntingEvents, st.worstOverDb };
+            std::printf ("[CL-4%s] %s D=%2.0f ms | 120 秒: %s / 収束 %.2f 秒 / 再発 %d 回 / 定常レベルからの最大の盛り上がり %.1f dB\n",
+                         rampSec > 0.0 ? " 徐々に上げる" : "", r.room, r.delayMs,
+                         r.diverged ? "発散" : (r.converged ? "安定" : "収束せず"), st.convergedAt.value_or (-1.0), r.hunting, r.worstOverDb);
+            out.push_back (r);
+        }
+    }
+    return out;
+}
+
+void checkLong (const std::vector<LongResult>& results)
+{
+    for (const auto& r : results)
+    {
+        INFO (r.room << " D=" << r.delayMs << " ms");
+        CHECK_FALSE (r.diverged);
+        CHECK (r.converged);
+        CHECK (r.hunting <= 2);
+        CHECK (r.worstOverDb <= 12.0);
+    }
+}
+}
+
+TEST_CASE ("CL-4 残響主体の会場で 120 秒（未達なら記録のみ）", "[CL-4][!mayfail]")
+{
+    checkLong (runLongSet (false, 0.0));
+}
+
+TEST_CASE ("CL-4-PA 実際の PA に近い経路・徐々に上げて 120 秒", "[CL-4][!mayfail]")
+{
+    checkLong (runLongSet (true, 5.0));
+}
+
+namespace
+{
 } // namespace
 
 TEST_CASE ("CL-1 発振限界 +6 dB で安定している（9 条件）", "[CL]")

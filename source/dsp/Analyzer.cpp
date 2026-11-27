@@ -55,6 +55,9 @@ void Analyzer::prepare (double sampleRate, int numChannels, int hopSize, const B
     peakFreq.assign (size_t (half + 1), 0.0f);
     runFmin.assign (size_t (half + 1), 0.0f);
     runFmax.assign (size_t (half + 1), 0.0f);
+    runFlo.assign (size_t (half + 1), 0.0f);
+    runFhi.assign (size_t (half + 1), 0.0f);
+    runFavg.assign (size_t (half + 1), 0.0f);
     handled.assign (size_t (half + 1), 0);
     confirmedNow.assign (size_t (half + 1), 0);
     prominence.assign (size_t (half + 1), -100.0f);
@@ -488,20 +491,38 @@ void Analyzer::frame() noexcept
                     best = level[j];
                     f = peakFreq[j];
                 }
+            // 周波数の安定を 2 通りで見る。
+            //  ・その場の値の幅（freqWobbleHz）：解析で分けられないほど近い 2 本の発振が同時に鳴ると、
+            //    うなりで見かけの周波数が小刻みに揺れる。この揺れは許す。
+            //  ・ならした値の幅（freqToleranceHz）：声や楽器のように中心が動いていくものは許さない。
+            auto restart = [&]
+            {
+                runMax[i] = runStart[i] = l5;
+                runFlo[i] = runFhi[i] = runFavg[i] = runFmin[i] = runFmax[i] = f;
+            };
             if (streak[i] == 0)
+                restart();
+            else
             {
-                runMax[i] = runStart[i] = l5;
-                runFmin[i] = runFmax[i] = f;
-            }
-            runFmin[i] = std::min (runFmin[i], f);
-            runFmax[i] = std::max (runFmax[i], f);
-            if (runFmax[i] - runFmin[i] > tune.freqToleranceHz)
-            {
-                // 周波数が動いた＝声や楽器の倍音。数え直す（スコアも 0 に戻す）。
-                streak[i] = 0;
-                score[i]  = 0.0f;
-                runMax[i] = runStart[i] = l5;
-                runFmin[i] = runFmax[i] = f;
+                const int n = streak[i] + 1; // この山を続けて見たフレーム数
+                runFavg[i] += (f - runFavg[i]) * (n <= 4 ? 1.0f / float (n) : 0.25f);
+                runFlo[i] = std::min (runFlo[i], f);
+                runFhi[i] = std::max (runFhi[i], f);
+                if (n == 3)
+                    runFmin[i] = runFmax[i] = runFavg[i];
+                else if (n > 3)
+                {
+                    runFmin[i] = std::min (runFmin[i], runFavg[i]);
+                    runFmax[i] = std::max (runFmax[i], runFavg[i]);
+                }
+                if (runFhi[i] - runFlo[i] > tune.freqWobbleHz
+                    || (n >= 3 && runFmax[i] - runFmin[i] > tune.freqToleranceHz))
+                {
+                    // 周波数が動いた＝声や楽器の倍音。数え直す（スコアも 0 に戻す）。
+                    streak[i] = 0;
+                    score[i]  = 0.0f;
+                    restart();
+                }
             }
             runMax[i] = std::max (runMax[i], l5);
             if (runMax[i] - l5 > tune.drawdownDb)

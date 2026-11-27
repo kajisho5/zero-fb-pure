@@ -300,7 +300,8 @@ struct Stability
 };
 
 // SPEC §8.3 の定義で、収束時刻・定常レベル・ハンチング回数を求める。windowSec は t_c からの観測時間。
-inline Stability analyse (const Run& run, double windowSec)
+// startSec: ここより前は見ない（ゲインを徐々に上げる走行では、上げ終わった時刻を渡す）。
+inline Stability analyse (const Run& run, double windowSec, double startSec = 0.0)
 {
     Stability st;
     st.diverged = run.diverged;
@@ -319,7 +320,8 @@ inline Stability analyse (const Run& run, double windowSec)
     // t_c: -30 dBFS 未満が 200 ms 続いた最初の時刻。
     int below = 0;
     std::size_t tc = lv.size();
-    for (std::size_t i = 0; i < lv.size(); ++i)
+    const auto first = std::size_t (std::max (0.0, startSec * kFs - 960.0) / 48.0);
+    for (std::size_t i = first; i < lv.size(); ++i)
     {
         below = lv[i] < -30.0f ? below + 1 : 0;
         if (below >= 200)

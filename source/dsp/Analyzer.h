@@ -38,7 +38,8 @@ struct Tuning
     float deepenFastSec   = 0.060f;  // 音量が大きいとき（deepenFastLevelDb 以上）の速い進み方
     float deepenFastLevelDb = 0.0f;   // 0 dBFS 以上＝実質的に使わない（調整の余地として残す）
     float risingSlackDb   = 0.6f;    // 1 フレームでこれ以上下がったら「収まり始めた」とみなす
-    float freqToleranceHz = 4.0f;    // 山の周波数がこの幅を超えて動いたら「同じ音ではない」とみなす
+    float freqToleranceHz = 4.0f;    // ならした周波数がこの幅を超えて動いたら「同じ音ではない」とみなす
+    float freqWobbleHz    = 16.0f;   // その場の周波数の揺れはこの幅まで許す（近すぎる 2 本の発振のうなり）
     float notchMatchRatio = 0.0175f; // ノッチと山を同じものとみなす周波数の差（割合。約 1/40 オクターブ）
     float notchMatchMinHz = 6.0f;    // 同上（下限）
     float settleBack      = 0.60f;   // 保持に移るとき、深さをこの割合に戻す（行きすぎた分を返す）
@@ -118,7 +119,7 @@ private:
     int writePos = 0;
 
     std::vector<float> workRe, workIm;
-    std::vector<float> power, level, score, smooth, runMax, runStart, lastL5, peakFreq, runFmin, runFmax;
+    std::vector<float> power, level, score, smooth, runMax, runStart, lastL5, peakFreq, runFmin, runFmax, runFlo, runFhi, runFavg;
     std::vector<double> prefix;
     std::vector<std::int32_t> streak;
     std::vector<std::uint8_t> peak, confirmedNow, handled;
