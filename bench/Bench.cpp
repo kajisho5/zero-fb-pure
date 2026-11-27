@@ -52,6 +52,6 @@ int main()
     std::printf ("  average load : %.3f %% of realtime\n", 100.0 * total / (seconds * 1.0e6));
     std::printf ("  worst block  : %.1f us (%.1f %% of the %.0f us buffer period)\n",
                  worst, 100.0 * worst / period, period);
-    std::printf ("  note         : Step 1 only (analysis path not included yet). checksum %g\n", double (sink));
+    std::printf ("  note         : EQ targets fixed for the measurement; analysis path is running. checksum %g\n", double (sink));
     return 0;
 }

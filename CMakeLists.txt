@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
-  set(CMAKE_BUILD_TYPE Release)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "ビルドの種類" FORCE)
 endif()
 
 option(ZFP_BUILD_TESTS "テストと計測用プログラムを作る" ON)
@@ -21,9 +21,11 @@ endif()
 
 # ---- DSP コア（JUCE に依存しない）
 add_library(zfp_dsp STATIC
+  source/dsp/Analyzer.cpp
   source/dsp/BandLayout.cpp
   source/dsp/Decoupler.cpp
-  source/dsp/Engine.cpp)
+  source/dsp/Engine.cpp
+  source/dsp/Fft.cpp)
 target_include_directories(zfp_dsp PUBLIC source)
 
 if(MSVC)
@@ -42,12 +44,16 @@ if(ZFP_BUILD_TESTS)
 
   add_executable(zfp_tests
     tests/AllocCounter.cpp
+    tests/ControlTests.cpp
     tests/LayoutAndDecouplerTests.cpp
     tests/ZeroLatencyTests.cpp)
   target_link_libraries(zfp_tests PRIVATE zfp_dsp Catch2::Catch2WithMain)
 
   add_executable(zfp_bench bench/Bench.cpp)
   target_link_libraries(zfp_bench PRIVATE zfp_dsp)
+
+  add_executable(zfp_loop bench/LoopExplore.cpp)
+  target_link_libraries(zfp_loop PRIVATE zfp_dsp)
 
   enable_testing()
   add_test(NAME zfp_tests COMMAND zfp_tests)

@@ -3,6 +3,7 @@
 #pragma once
 #include "BandLayout.h"
 #include "Decoupler.h"
+#include "Analyzer.h"
 #include "Primitives.h"
 #include <array>
 #include <atomic>
@@ -35,14 +36,22 @@ public:
     // ---- テスト用の口（SPEC §8.2）。製品の画面からは触れない。process() と同じスレッドから呼ぶこと。
     // バンド中心での目標応答 [dB] を外から固定する。nullptr で解除。
     void setTestTargetsDb (const float* targetsDb) noexcept;
+    // ノッチ 1 本を外から固定する（index < 0 で解除）。setTestTargetsDb と併用する。
+    void setTestNotch (int index, float freqHz, float gainDb) noexcept;
+    float getNotchGainDb (int n) const noexcept { return notchGainDb[size_t (n)]; }
+    float getNotchFreqHz (int n) const noexcept { return notchFreq[size_t (n)]; }
     GuardState getGuardState() const noexcept { return guard; }
     float getGuardFade() const noexcept       { return guardFade; }
     const float* getBandGainsDb() const noexcept { return gainDb.data(); }
+    const Analyzer& getAnalyzer() const noexcept { return analyzer; }
+    void setTuning (const Tuning& t) noexcept    { analyzer.setTuning (t); }
 
 private:
     void controlFrame() noexcept;
     void computeTargetCoefs() noexcept;
     void snapCoefsToTargets() noexcept;
+    void updateDerivedCoefs() noexcept;
+    void computeNotchTargets() noexcept;
     void clearFilterStates() noexcept;
     void enterMuted() noexcept;
     void beginRecover() noexcept;
@@ -51,13 +60,14 @@ private:
     // 設定
     double fs = 48000.0;
     int numIn = 1, numOut = 1;
-    int hop = 128;
+    int hop = 256;
     int fadeSamples = 240;
     float fadeStep = 1.0f / 240.0f;
     float guardRelStep = 0.0f;
 
     BandLayout layout;
     Decoupler decoupler;
+    Analyzer analyzer;
 
     // パラメータ
     std::atomic<float> strength { 75.0f };
@@ -70,9 +80,21 @@ private:
     // SVF の係数（現在値・1 サンプルあたりの増分・目標値）。SPEC §4.4, §4.5
     template <typename T> using BandArray = std::array<T, kNumBands>;
     alignas (32) BandArray<float> a1 {}, a2 {}, a3 {}, m1 {};
+    alignas (32) BandArray<float> c0 {}; // 1 + m1 * a2（毎サンプル係数から作る）
     alignas (32) BandArray<float> da1 {}, da2 {}, da3 {}, dm1 {};
     alignas (32) BandArray<float> ta1 {}, ta2 {}, ta3 {}, tm1 {};
     int rampLeft = 0;
+
+    // 動くノッチ（SPEC §14）。係数の持ち方は帯域と同じ。
+    template <typename T> using NotchArray = std::array<T, kNumNotches>;
+    alignas (32) NotchArray<float> na1 {}, na2 {}, na3 {}, nm1 {}, nc0 {};
+    alignas (32) NotchArray<float> dna1 {}, dna2 {}, dna3 {}, dnm1 {};
+    alignas (32) NotchArray<float> tna1 {}, tna2 {}, tna3 {}, tnm1 {};
+    NotchArray<float> notchFreq {}, notchGainDb {};
+    alignas (32) float nic1[kMaxChannels][kNumNotches] {};
+    alignas (32) float nic2[kMaxChannels][kNumNotches] {};
+    int testNotchIndex = -1;
+    float testNotchFreq = 1000.0f, testNotchGainDb = 0.0f;
 
     // フィルタの状態
     alignas (32) float ic1[kMaxChannels][kNumBands] {};
