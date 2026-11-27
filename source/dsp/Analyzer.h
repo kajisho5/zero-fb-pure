@@ -1,0 +1,110 @@
+// Control Path：入力を解析して、バンドごとの「抑制の深さ e（0〜1）」を決める。SPEC §5。
+// frame() はオーディオスレッドから呼ぶ。確保は prepare() の中だけ。
+#pragma once
+#include "BandLayout.h"
+#include "Fft.h"
+#include <array>
+#include <cstdint>
+#include <vector>
+
+namespace zfp
+{
+// 検出と保持の定数（SPEC §5.5〜§5.8）。時間は秒。
+struct Tuning
+{
+    float preHighpassHz   = 40.0f;
+    float analysisLowHz   = 50.0f;
+    float analysisHighHz  = 16000.0f;
+    float gateDb          = -72.0f;  // 絶対ゲート
+    float prominenceDb    = 12.0f;   // 突出度
+    // 倍音列の判定（声や楽器の倍音を発振と間違えないため）。警戒中は行わない。
+    float partialProminenceDb = 6.0f; // 倍音の候補とみなす山の突出度
+    float combPartnerDb   = 15.0f;   // 候補より何 dB 下までを仲間の倍音とみなすか
+    float combMinHz       = 70.0f;   // 倍音の間隔の下限
+    float combMaxHz       = 1200.0f; // 倍音の間隔の上限
+    float emergencyLevelDb = -12.0f; // 緊急の例外
+    float emergencyProminenceDb = 20.0f;
+    float drawdownDb      = 3.0f;    // 落ち込み量の上限
+    float scoreUpSec      = 0.080f;  // スコア 0→1（通常）
+    float scoreUpAlertSec = 0.016f;  // スコア 0→1（警戒中）
+    float scoreDownSec    = 0.400f;  // スコア 1→0
+    float growthFastDb    = 10.0f;   // これだけ伸び続けた山は、警戒中と同じ速さで数える
+    float deepenSec       = 0.060f;  // 発振が続く間、深さ 0→1 に進む時間
+    float alertSec        = 1.5f;
+    float engageOn        = 0.50f;
+    float engageOff       = 0.25f;
+    float holdBaseSec     = 15.0f;
+    int   holdMaxDoublings = 3;
+    float holdMaxSec      = 120.0f;
+    float releaseSec      = 8.0f;
+    float retriggerSec    = 10.0f;
+    float forgetSec       = 60.0f;
+};
+
+class Analyzer
+{
+public:
+    enum class BandState : std::uint8_t { idle, engaged, hold, release };
+
+    void prepare (double sampleRate, int numChannels, int hopSize, const BandLayout& layout);
+    void reset() noexcept;
+    void setTuning (const Tuning& t) noexcept;
+
+    // 1 サンプルずつ入力を渡す（ch1 はモノのとき無視）。
+    void push (float ch0, float ch1) noexcept
+    {
+        pre[0] += preCoef * (ch0 - pre[0]);
+        ring[0][size_t (writePos)] = ch0 - pre[0];
+        if (channels == 2)
+        {
+            pre[1] += preCoef * (ch1 - pre[1]);
+            ring[1][size_t (writePos)] = ch1 - pre[1];
+        }
+        writePos = (writePos + 1) & (fftSize - 1);
+    }
+
+    // ホップごとに 1 回呼ぶ。バンドごとの深さ e（0〜1）を更新する。
+    void frame() noexcept;
+
+    const float* depths() const noexcept { return depth.data(); }
+    const float* bandScores() const noexcept { return bandScore.data(); }
+    BandState bandState (int b) const noexcept { return state[size_t (b)]; }
+    bool alertActive() const noexcept { return alertLeft > 0.0f; }
+    float peakHz() const noexcept { return strongestHz; }
+    int getFftSize() const noexcept { return fftSize; }
+
+private:
+    void stepBand (int b, float s, bool howlNow) noexcept;
+
+    Tuning tune;
+    double fs = 48000.0;
+    int channels = 1, hop = 256, fftSize = 2048, half = 1024;
+    float frameSec = 0.0f, binHz = 0.0f, norm2 = 1.0f;
+    int kLo = 1, kHi = 1, combMin = 3, combMax = 51;
+    float stepUp = 0, stepUpAlert = 0, stepDown = 0, releaseStep = 0, deepenStep = 0;
+
+    Fft fft;
+    std::vector<float> window;
+    std::array<std::vector<float>, 2> ring;
+    std::array<float, 2> pre { 0.0f, 0.0f };
+    float preCoef = 0.0f;
+    int writePos = 0;
+
+    std::vector<float> workRe, workIm;
+    std::vector<float> power, level, score, smooth, runMax, runStart;
+    std::vector<double> prefix;
+    std::vector<std::int32_t> streak;
+    std::vector<std::uint8_t> peak, confirmedNow;
+    std::vector<int> localWidth, partials;
+    std::vector<float> prominence;
+
+    bool inHarmonicSeries (int k, float levelDb) const noexcept;
+
+    std::array<int, kNumBands> bandFirst {}, bandLast {};
+    std::array<float, kNumBands> bandScore {}, depth {}, holdLeft {}, idleFor {};
+    std::array<BandState, kNumBands> state {};
+    std::array<std::uint8_t, kNumBands> strikes {}, everEngaged {};
+    float alertLeft = 0.0f;
+    float strongestHz = 0.0f;
+};
+} // namespace zfp

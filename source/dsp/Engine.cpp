@@ -21,13 +21,14 @@ bool Engine::prepare (double sampleRate, int numInputChannels, int numOutputChan
     fs     = sampleRate;
     numIn  = numInputChannels;
     numOut = numOutputChannels;
-    hop    = sampleRate <= 50000.0 ? 128 : 256; // SPEC §2.1, §6.3
+    hop    = sampleRate <= 50000.0 ? 256 : 512; // SPEC §2.1, §6.3
 
     fadeSamples  = std::max (1, int (std::lround (kFadeSeconds * sampleRate)));
     fadeStep     = 1.0f / float (fadeSamples);
     guardRelStep = float ((double (hop) / sampleRate) / kGuardRelSeconds);
 
     decoupler.build (layout, sampleRate);
+    analyzer.prepare (sampleRate, numIn, hop, layout);
 
     for (auto& d : dc)
         d.prepare (sampleRate);
@@ -89,11 +90,22 @@ void Engine::snapCoefsToTargets() noexcept
     a1 = ta1; a2 = ta2; a3 = ta3; m1 = tm1;
     da1.fill (0.0f); da2.fill (0.0f); da3.fill (0.0f); dm1.fill (0.0f);
     rampLeft = 0;
+    updateDerivedCoefs();
+}
+
+void Engine::updateDerivedCoefs() noexcept
+{
+    for (int b = 0; b < kNumBands; ++b)
+    {
+        const size_t i = size_t (b);
+        c0[i] = 1.0f + m1[i] * a2[i];
+    }
 }
 
 void Engine::enterMuted() noexcept
 {
     clearFilterStates();
+    analyzer.reset();
     guard      = GuardState::muted;
     guardClean = 0;
     guardFade  = 0.0f;
@@ -118,6 +130,7 @@ void Engine::beginRecover() noexcept
 void Engine::applyReset() noexcept
 {
     clearFilterStates();
+    analyzer.reset();
     gainDb.fill (0.0f);
     guardRel = 0.0f;
     // ゲインは次の制御フレームから 1 フレームかけて目標へ動く。
@@ -130,10 +143,16 @@ void Engine::controlFrame() noexcept
 
     const float fl = std::clamp (floorDb.load (std::memory_order_relaxed), kFloorMinDb, kFloorMaxDb);
 
+    // 検出は常に動かす（バイパス中も会場の状態を追い続ける）。
+    analyzer.frame();
+    const float s01 = std::clamp (strength.load (std::memory_order_relaxed) * 0.01f, 0.0f, 1.0f);
+    const float maxDepthDb = kMaxDepthDb * std::pow (s01, kStrengthPower); // SPEC §5.9
+    const float* depth = analyzer.depths();
+
     for (int b = 0; b < kNumBands; ++b)
     {
         const size_t i = size_t (b);
-        float t = useTestTargets ? testTargets[i] : 0.0f; // Step 2 で検出結果に置き換わる
+        float t = useTestTargets ? testTargets[i] : -depth[i] * maxDepthDb;
         t = std::min (t, fl * guardRel);                  // ガード復帰直後の深いカット
         targetDb[i] = std::clamp (t, fl, 0.0f);
     }
@@ -193,6 +212,7 @@ void Engine::process (const float* const* in, float* const* out, int numSamples)
             if (--rampLeft == 0)
             {
                 a1 = ta1; a2 = ta2; a3 = ta3; m1 = tm1;
+                updateDerivedCoefs();
             }
             else
             {
@@ -200,6 +220,7 @@ void Engine::process (const float* const* in, float* const* out, int numSamples)
                 {
                     const size_t i = size_t (b);
                     a1[i] += da1[i]; a2[i] += da2[i]; a3[i] += da3[i]; m1[i] += dm1[i];
+                    c0[i] = 1.0f + m1[i] * a2[i];
                 }
             }
         }
@@ -218,25 +239,34 @@ void Engine::process (const float* const* in, float* const* out, int numSamples)
         else
         {
             bool eqBad = false;
+            float v[kMaxChannels] = { 0.0f, 0.0f };
+            for (int c = 0; c < numIn; ++c)
+                v[c] = dc[size_t (c)].tick (x[c]);
+
+            // バンドを外側、チャンネルを内側にして、左右の計算を同時に進められるようにする。
+            // 出力は out = v + m1*v1 と同じ値を、c0*v + m1*(a1*s1 - a2*s2) の形で求める
+            // （次のバンドへ渡る計算を短くするため。m1 = 0 のときは厳密に out = v）。
+            for (int b = 0; b < kNumBands; ++b)
+            {
+                const size_t i = size_t (b);
+                const float ca1 = a1[i], ca2 = a2[i], ca3 = a3[i], cm1 = m1[i], cc0 = c0[i];
+                for (int c = 0; c < numIn; ++c)
+                {
+                    const float s1 = ic1[c][b], s2 = ic2[c][b];
+                    const float in0 = v[c];
+                    const float v3 = in0 - s2;
+                    const float v1 = ca1 * s1 + ca2 * v3;
+                    const float v2 = s2 + ca2 * s1 + ca3 * v3;
+                    ic1[c][b] = 2.0f * v1 - s1;
+                    ic2[c][b] = 2.0f * v2 - s2;
+                    v[c] = cc0 * in0 + cm1 * (ca1 * s1 - ca2 * s2);
+                }
+            }
+
             for (int c = 0; c < numIn; ++c)
             {
-                float v = dc[size_t (c)].tick (x[c]);
-                float* s1 = ic1[c];
-                float* s2 = ic2[c];
-
-                for (int b = 0; b < kNumBands; ++b)
-                {
-                    const size_t i = size_t (b);
-                    const float v3 = v - s2[b];
-                    const float v1 = a1[i] * s1[b] + a2[i] * v3;
-                    const float v2 = s2[b] + a2[i] * s1[b] + a3[i] * v3;
-                    s1[b] = 2.0f * v1 - s1[b];
-                    s2[b] = 2.0f * v2 - s2[b];
-                    v = v + m1[i] * v1;
-                }
-
-                eqBad = eqBad || isBad (v);
-                p[c] = v;
+                eqBad = eqBad || isBad (v[c]);
+                p[c] = v[c];
             }
 
             if (eqBad)
@@ -265,6 +295,10 @@ void Engine::process (const float* const* in, float* const* out, int numSamples)
                 }
             }
         }
+
+        // 解析用に入力を貯める（異常値は 0 として渡す）。
+        if (guard != GuardState::muted)
+            analyzer.push (inputBad ? 0.0f : x[0], (inputBad || numIn < 2) ? 0.0f : x[1]);
 
         // 制御フレーム（ホップ境界のサンプルの処理直後）。結果は次のサンプルから反映される。
         if (++hopCount >= hop)

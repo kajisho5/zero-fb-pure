@@ -342,6 +342,8 @@ TEST_CASE ("ZL-8 全ゲイン 0 dB では DC Blocker 以外は何も変えない
 
     zfp::Engine e;
     REQUIRE (e.prepare (fs, 1, 1));
+    const auto flat = uniformTargets (0.0f); // 検出を止めて、全ゲイン 0 dB に固定
+    e.setTestTargetsDb (flat.data());
     const Buffer in { sine (n, 997.0, fs, peak) };
     Buffer out = makeBuffer (1, n);
     processRange (e, in, out, 0, n, 64);

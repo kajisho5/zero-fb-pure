@@ -20,4 +20,6 @@ inline constexpr float  kFloorMaxDb      = -6.0f;
 inline constexpr double kDecoupleRefA    = -6.0;     // SPEC §5.10
 inline constexpr double kDecoupleRefC    = -24.0;
 inline constexpr int    kDecoupleIters   = 3;
+inline constexpr float  kMaxDepthDb      = 36.0f;    // STRENGTH 100% のときの最大の深さ  SPEC §5.9
+inline constexpr float  kStrengthPower   = 1.6f;
 } // namespace zfp

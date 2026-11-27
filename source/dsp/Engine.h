@@ -3,6 +3,7 @@
 #pragma once
 #include "BandLayout.h"
 #include "Decoupler.h"
+#include "Analyzer.h"
 #include "Primitives.h"
 #include <array>
 #include <atomic>
@@ -38,11 +39,14 @@ public:
     GuardState getGuardState() const noexcept { return guard; }
     float getGuardFade() const noexcept       { return guardFade; }
     const float* getBandGainsDb() const noexcept { return gainDb.data(); }
+    const Analyzer& getAnalyzer() const noexcept { return analyzer; }
+    void setTuning (const Tuning& t) noexcept    { analyzer.setTuning (t); }
 
 private:
     void controlFrame() noexcept;
     void computeTargetCoefs() noexcept;
     void snapCoefsToTargets() noexcept;
+    void updateDerivedCoefs() noexcept;
     void clearFilterStates() noexcept;
     void enterMuted() noexcept;
     void beginRecover() noexcept;
@@ -58,6 +62,7 @@ private:
 
     BandLayout layout;
     Decoupler decoupler;
+    Analyzer analyzer;
 
     // パラメータ
     std::atomic<float> strength { 75.0f };
@@ -70,6 +75,7 @@ private:
     // SVF の係数（現在値・1 サンプルあたりの増分・目標値）。SPEC §4.4, §4.5
     template <typename T> using BandArray = std::array<T, kNumBands>;
     alignas (32) BandArray<float> a1 {}, a2 {}, a3 {}, m1 {};
+    alignas (32) BandArray<float> c0 {}; // 1 + m1 * a2（毎サンプル係数から作る）
     alignas (32) BandArray<float> da1 {}, da2 {}, da3 {}, dm1 {};
     alignas (32) BandArray<float> ta1 {}, ta2 {}, ta3 {}, tm1 {};
     int rampLeft = 0;
