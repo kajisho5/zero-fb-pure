@@ -3,6 +3,7 @@
 #pragma once
 #include "BandLayout.h"
 #include "Fft.h"
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <vector>
@@ -91,6 +92,18 @@ public:
     bool alertActive() const noexcept { return alertLeft > 0.0f; }
     float peakHz() const noexcept { return strongestHz; }
     int getFftSize() const noexcept { return fftSize; }
+    // 保持（Hold）中のバンド・ノッチのうち、いちばん長く残っている残り時間 [秒]。無ければ 0。画面表示用。
+    float longestHoldSec() const noexcept
+    {
+        float longest = 0.0f;
+        for (int b = 0; b < kNumBands; ++b)
+            if (state[size_t (b)] == BandState::hold)
+                longest = std::max (longest, holdLeft[size_t (b)]);
+        for (const auto& n : notches)
+            if (n.state == BandState::hold)
+                longest = std::max (longest, n.holdLeft);
+        return longest;
+    }
 
 private:
     void stepBand (int b, float s, bool howlNow, bool loud) noexcept;
