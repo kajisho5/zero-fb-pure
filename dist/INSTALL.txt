@@ -1,0 +1,34 @@
+ZERO-FB PURE — how to install (macOS)
+
+1. Quit your DAW or plug-in host.
+2. Copy the files in this disk image to these folders:
+
+   ZERO-FB PURE.vst3       ->  /Library/Audio/Plug-Ins/VST3/
+   ZERO-FB PURE.component  ->  /Library/Audio/Plug-Ins/Components/
+
+   (To install for your user only, use the same folders under ~/Library instead.)
+
+3. Start the host again and rescan plug-ins if it asks.
+
+This build is signed with a Developer ID and notarized by Apple.
+It is a pre-release build for testing.
+
+License: GNU AGPL v3.0. Source code: https://github.com/kajisho5/zero-fb-pure
+
+
+ZERO-FB PURE — 入れ方（macOS）
+
+1. DAW やプラグインを読み込むソフトを終了します。
+2. このディスクイメージの中のファイルを、次のフォルダにコピーします。
+
+   ZERO-FB PURE.vst3       →  /Library/Audio/Plug-Ins/VST3/
+   ZERO-FB PURE.component  →  /Library/Audio/Plug-Ins/Components/
+
+   （自分のユーザーだけに入れる場合は、~/Library の下の同じフォルダに入れます。）
+
+3. ソフトを起動し直します。プラグインの再スキャンを求められたら実行します。
+
+このビルドは Developer ID で署名し、Apple の公証を通してあります。
+試用のためのリリース前のビルドです。
+
+ライセンス：GNU AGPL v3.0。ソースコード：https://github.com/kajisho5/zero-fb-pure
